@@ -1,0 +1,24 @@
+SAWCHA // OPTIMIZER 6.0 NATIVE — GOOGLE SIGN-IN SETUP
+==================================================
+1. Open https://console.cloud.google.com/ with your own Google account.
+2. Create or select a Google Cloud project and configure the OAuth consent
+   screen under Google Auth Platform, including test users if required.
+3. Create an OAuth client of type DESKTOP APP (not Web).
+4. Copy the generated client ID (NOT a client secret).
+5. Open the SAWCHA_OPTIMIZER.exe native login screen. Paste the Client ID into
+   the OAuth Client ID field and click SIGN IN WITH GOOGLE.
+6. The optimizer starts a desktop OAuth flow using PKCE and a one-time loopback
+   callback. Your default browser opens accounts.google.com.
+7. Complete Google sign-in there, then return to the native Windows window.
+
+The Google client ID (public value) is stored at
+  %LOCALAPPDATA%\Sawcha\Optimizer\oauth.json
+No Google password is captured by the optimizer. No refresh/access tokens
+are written to disk; the Google ID token is checked against Google's
+published public keys, issuer, audience and nonce before sign-in completes.
+
+Google account sign-in only means standard USER access. Developer Mode
+requires its own passphrase and does not grant Windows administrator rights.
+You do not need a website to use Google's Desktop OAuth flow.
+
+Docs: https://developers.google.com/identity/protocols/oauth2/native-app

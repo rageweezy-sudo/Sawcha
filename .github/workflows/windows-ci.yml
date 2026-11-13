@@ -1,0 +1,31 @@
+name: Windows CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src/optimizer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/optimizer/go.mod
+          cache: false
+      - name: Go tests
+        run: go test ./...
+      - name: Static analysis
+        run: go vet ./...
+      - name: Build native Windows EXE
+        shell: pwsh
+        run: |
+          go build -ldflags="-H windowsgui" -o "$env:RUNNER_TEMP\SAWCHA_OPTIMIZER.exe" .
+          if (-not (Test-Path "$env:RUNNER_TEMP\SAWCHA_OPTIMIZER.exe")) { throw 'Build output missing' }
+      - name: Keep build unsigned
+        shell: pwsh
+        run: Write-Host 'CI checks compile only. Production Authenticode signing must use a private signing service and should happen outside this public repository.'
