@@ -939,7 +939,8 @@ func nativeWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		if quiet != n.timerQuiet {
 			n.timerQuiet = quiet
 			if quiet {
-				setTimer.Call(hwnd, 1, 5000, 0)
+				// Minimize full-window redraws and CPU scheduling interruptions while gaming.
+				setTimer.Call(hwnd, 1, 15000, 0)
 			} else {
 				setTimer.Call(hwnd, 1, 1500, 0)
 			}
