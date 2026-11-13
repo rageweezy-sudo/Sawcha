@@ -328,6 +328,7 @@ func (a *App) routes() http.Handler {
 	api("/api/benchmark", a.benchmarkHandler)
 	api("/api/benchmark/import", a.importHandler)
 	api("/api/benchmark/capture", a.captureHandler)
+	api("/api/latency/compare", a.latencyCompareHandler)
 	api("/api/settings", a.settingsHandler)
 	api("/api/preferences", a.preferencesHandler)
 	api("/api/guides", a.guidesHandler)
@@ -566,6 +567,11 @@ func (a *App) pollLoop() {
 		if a.isQuietGaming() {
 			_, p := a.guardSnapshot()
 			interval = time.Duration(p.QuietMonitorSeconds) * time.Second
+		}
+		if a.isQuietGaming() {
+			// Do not launch multi-second WMI/PowerShell sampling during gameplay.
+			// A cheap read-only Toolhelp process snapshot still detects when the game closes.
+			continue
 		}
 		if time.Since(lastSample) < interval {
 			continue
@@ -1107,6 +1113,10 @@ func (a *App) presetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if v.Profile != "Competitive" && v.Profile != "Balanced" && v.Profile != "Creator" {
 		bad(w, "Unknown preset", 400)
+		return
+	}
+	if err := a.speculativeSystemChangesAllowed(); err != nil {
+		bad(w, err.Error(), 409)
 		return
 	}
 	a.mu.RLock()
