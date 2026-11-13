@@ -14,11 +14,12 @@ type AppPreferences struct {
 	DetectGames         bool `json:"detect_games"`
 	QuietWhileGaming    bool `json:"quiet_while_gaming"`
 	WarnBeforeChanges   bool `json:"warn_before_changes"`
+	LatencySafe         bool `json:"latency_safe"`
 	QuietMonitorSeconds int  `json:"quiet_monitor_seconds"`
 }
 
 func defaultAppPreferences() AppPreferences {
-	return AppPreferences{DetectGames: true, QuietWhileGaming: true, WarnBeforeChanges: true, QuietMonitorSeconds: 90}
+	return AppPreferences{DetectGames: true, QuietWhileGaming: true, WarnBeforeChanges: true, LatencySafe: true, QuietMonitorSeconds: 90}
 }
 func validPreferences(p AppPreferences) bool {
 	return p.QuietMonitorSeconds == 60 || p.QuietMonitorSeconds == 90 || p.QuietMonitorSeconds == 120
@@ -70,7 +71,7 @@ func (a *App) guardSnapshot() (string, AppPreferences) {
 }
 func (a *App) isQuietGaming() bool {
 	g, p := a.guardSnapshot()
-	return g != "" && p.DetectGames && p.QuietWhileGaming
+	return shouldSkipHeavyMonitor(g, p)
 }
 func (a *App) changeDuringGameWarning(ack bool) error {
 	g, p := a.guardSnapshot()
