@@ -68,3 +68,14 @@ func TestFlatAPOHasNoFiltersOrGainChanges(t *testing.T) {
     t.Fatalf("flat must not do unnecessary DSP: %q",txt)
  }
 }
+
+func TestManagedAudioProfilesNeverAddBufferingOrConvolution(t *testing.T) {
+ for _,name:=range []string{"Flat","Footsteps","Competitive FPS","Balanced","Music"} {
+   p,err:=Preset(name);if err!=nil{t.Fatal(err)}
+   text,err:=APOText(p,"");if err!=nil{t.Fatal(err)}
+   if strings.Contains(text,"Delay:")||strings.Contains(text,"Convolution:")||
+       strings.Contains(text,"Copy:")||strings.Contains(text,"Preamp: +") {
+       t.Fatalf("%s introduces latency-sensitive processing: %s",name,text)
+   }
+ }
+}
