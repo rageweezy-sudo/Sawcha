@@ -57,6 +57,7 @@ type SavedConfig struct {
 	Backup              *Backup                       `json:"backup,omitempty"`
 	Preset              string                        `json:"preset"`
 	SensitivityProfiles map[string]SensitivitySetting `json:"sensitivityProfiles,omitempty"`
+	Audio               AudioSettings                `json:"audio"`
 }
 type RegBackup struct {
 	Key    string `json:"key"`
@@ -209,6 +210,9 @@ func (a *App) loadConfig() {
 	if a.config.Preset == "" {
 		a.config.Preset = "Stock"
 	}
+	if a.config.Audio.Plan == "" {
+		a.config.Audio = defaultAudioSettings()
+	}
 }
 func (a *App) persistConfig() error {
 	a.mu.RLock()
@@ -329,6 +333,12 @@ func (a *App) routes() http.Handler {
 	api("/api/guides", a.guidesHandler)
 	api("/api/sensitivity", a.sensitivityHandler)
 	api("/api/assistant/chat", a.advisorHandler)
+	api("/api/audio/status", a.audioStatusHandler)
+	api("/api/audio/settings", a.audioSettingsHandler)
+	api("/api/audio/preset", a.audioPresetHandler)
+	api("/api/audio/band", a.audioBandHandler)
+	api("/api/audio/apply", a.audioApplyHandler)
+	api("/api/audio/remove", a.audioRemoveHandler)
 	api("/api/quit", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST required", 405)
