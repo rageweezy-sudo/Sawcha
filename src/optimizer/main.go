@@ -559,19 +559,20 @@ func (a *App) pollLoop() {
 	for range ticker.C {
 		a.mu.RLock()
 		recentlyViewed := time.Since(a.lastMonitor) < 18*time.Second
+		game, prefs := a.runningGame, a.preferences
 		a.mu.RUnlock()
+		if !shouldRunLiveMonitor(recentlyViewed, game, prefs) {
+			// Strict mode leaves idle Windows alone; during games no heavy
+			// WMI/PowerShell collection runs, even with the Live Monitor open.
+			continue
+		}
 		interval := 30 * time.Second
 		if recentlyViewed {
-			interval = 5 * time.Second
-		}
-		if a.isQuietGaming() {
-			_, p := a.guardSnapshot()
-			interval = time.Duration(p.QuietMonitorSeconds) * time.Second
-		}
-		if a.isQuietGaming() {
-			// Do not launch multi-second WMI/PowerShell sampling during gameplay.
-			// A cheap read-only Toolhelp process snapshot still detects when the game closes.
-			continue
+			if prefs.LatencySafe {
+				interval = 15 * time.Second
+			} else {
+				interval = 5 * time.Second
+			}
 		}
 		if time.Since(lastSample) < interval {
 			continue
