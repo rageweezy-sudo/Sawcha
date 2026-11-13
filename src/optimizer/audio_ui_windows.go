@@ -30,6 +30,19 @@ func (n *nativeApp) audioAction(action string) {
  case "selector","editor":
     n.async(func()error{return audioVendorTool(action)})
     return
+ case "check":
+    n.async(func()error{
+       state,err:=n.api("/api/audio/status",map[string]string{})
+       if err!=nil{return err}
+       if state["configDetected"]!=true {n.note("Equalizer APO not detected. Install it, choose a playback device, then reboot.");return nil}
+       if state["includedInConfig"]==true&&state["managedFiltersPresent"]==true {
+           n.note("SAWCHA EQ file is linked to Equalizer APO. Verify device attachment in Device Selector and listen for a change.")
+       }else{
+           n.note("Equalizer APO found. Select playback device and choose INSTALL EQ PROFILE.")
+       }
+       return nil
+    })
+    return
  case "save":
     s:=n.audioSnapshot()
     s.DevicePattern=strings.TrimSpace(n.read("audiodevice"))
@@ -151,7 +164,7 @@ func (n *nativeApp) paintAudioSetup(dc uintptr,x,cw int) {
  w:=(cw-50)/3
  n.button(dc,"audio:download","DOWNLOAD",x+12,530,w,36,false)
  n.button(dc,"audio:selector","DEVICE SELECTOR",x+25+w,530,w,36,false)
- n.button(dc,"audio:editor","APO EDITOR",x+38+2*w,530,w,36,false)
+ n.button(dc,"audio:check","CHECK STATUS",x+38+2*w,530,w,36,false)
  n.panel(dc,x,581,cw,110)
  n.text(dc,"STEP 4 / OPTIONAL AUDIO DEVICE FILTER",x+15,587,cw-30,27,red,n.fontBold,false)
  n.wrap(dc,"Type the playback device name (for example, Speakers), or leave blank to process every endpoint selected in Equalizer APO.",x+15,617,cw-30,40)
