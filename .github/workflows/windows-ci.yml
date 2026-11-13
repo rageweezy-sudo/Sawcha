@@ -29,3 +29,22 @@ jobs:
       - name: Keep build unsigned
         shell: pwsh
         run: Write-Host 'CI checks compile only. Production Authenticode signing must use a private signing service and should happen outside this public repository.'
+
+  plus-api:
+    name: Test private-data-safe Plus API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/plus-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/plus-api/go.mod
+          cache: false
+      - name: Test webhook and licensing flows
+        run: go test -race -cover ./...
+      - name: Static analysis
+        run: go vet ./...
+      - name: Build public customer-only backend
+        run: go build ./...

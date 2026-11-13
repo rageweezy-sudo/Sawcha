@@ -159,6 +159,7 @@ var (
 
 var menus = []struct{ id, name, detail string }{
 	{"overview", "DASHBOARD", "Your system at a glance"},
+	{"plus", "PLUS MEMBERSHIP", "Secure Stripe subscription"},
 	{"live", "LIVE MONITOR", "Real resource usage"},
 	{"games", "GAME LIBRARY", "Launch & profiles"},
 	{"profiles", "OPTIMIZE", "Reversible presets"},
@@ -170,7 +171,7 @@ var menus = []struct{ id, name, detail string }{
 	{"repairs", "REPAIR LAB", "Safe diagnostic tools"},
 	{"explain", "WHAT DOES IT DO?", "Plain English explanations"},
 	{"developer", "DEVELOPER MODE", "Protected diagnostics"},
-	{"settings", "ACCOUNT + TOOLS", "Google / drivers / security"},
+	{"settings", "SETTINGS", "Quiet gaming / safety / drivers"},
 }
 
 type nativeApp struct {
@@ -194,6 +195,8 @@ type nativeApp struct {
 	busy                                         bool
 	client                                       *http.Client
 	offset                                       int
+	plus                                         plusSettings
+	timerQuiet                                   bool
 }
 
 var native *nativeApp
@@ -295,6 +298,15 @@ func (n *nativeApp) confirm(s string) bool {
 	return p == idYes
 }
 
+// A visible warning is shown before configuration changes made while playing.
+func (n *nativeApp) gameWarning(action string) bool {
+	game, prefs := n.app.guardSnapshot()
+	if game == "" || !prefs.WarnBeforeChanges {
+		return true
+	}
+	return n.confirm("GAME RUNNING: " + game + "\n\n" + action + " could cause stutter or interruptions while playing.\n\nSave your game or wait until the match ends. Continue anyway?")
+}
+
 func (n *nativeApp) act(key string) {
 	if strings.HasPrefix(key, "nav:") {
 		n.pageTo(strings.TrimPrefix(key, "nav:"))
@@ -304,6 +316,38 @@ func (n *nativeApp) act(key string) {
 		v, _ := strconv.Atoi(strings.TrimPrefix(key, "choose:"))
 		n.selected = v
 		n.invalidate()
+		return
+	}
+	if strings.HasPrefix(key, "pref:") {
+		field := strings.TrimPrefix(key, "pref:")
+		n.async(func() error {
+			_, p := n.app.guardSnapshot()
+			switch field {
+			case "detect":
+				p.DetectGames = !p.DetectGames
+			case "quiet":
+				p.QuietWhileGaming = !p.QuietWhileGaming
+			case "warn":
+				p.WarnBeforeChanges = !p.WarnBeforeChanges
+			case "interval":
+				if p.QuietMonitorSeconds == 60 {
+					p.QuietMonitorSeconds = 90
+				} else if p.QuietMonitorSeconds == 90 {
+					p.QuietMonitorSeconds = 120
+				} else {
+					p.QuietMonitorSeconds = 60
+				}
+			case "defaults":
+				p = defaultAppPreferences()
+			default:
+				return errors.New("Unknown setting")
+			}
+			_, e := n.api("/api/preferences", p)
+			if e == nil {
+				n.note("Preferences saved. Sawcha will respect your updated game-safety settings.")
+			}
+			return e
+		})
 		return
 	}
 	if strings.HasPrefix(key, "tool:") {
@@ -319,11 +363,11 @@ func (n *nativeApp) act(key string) {
 	}
 	if strings.HasPrefix(key, "repair:") {
 		what := strings.TrimPrefix(key, "repair:")
-		if !n.confirm(repairMessage(what)) {
+		if !n.confirm(repairMessage(what)) || !n.gameWarning("Starting this diagnostic") {
 			return
 		}
 		n.async(func() error {
-			v, e := n.api("/api/diagnostic", map[string]string{"kind": what})
+			v, e := n.api("/api/diagnostic", map[string]interface{}{"kind": what, "ack_game_running": true})
 			if e == nil {
 				n.note("Started " + what + " job. Watch job history below. ID: " + fmt.Sprint(v["jobID"]))
 			}
@@ -333,11 +377,11 @@ func (n *nativeApp) act(key string) {
 	}
 	if strings.HasPrefix(key, "preset:") {
 		what := strings.TrimPrefix(key, "preset:")
-		if !n.confirm(presetExplanation(what) + "\n\nApply now? A backup will be saved first.") {
+		if !n.confirm(presetExplanation(what)+"\n\nApply now? A backup will be saved first.") || !n.gameWarning("Applying a Windows optimization preset") {
 			return
 		}
 		n.async(func() error {
-			_, e := n.api("/api/preset", map[string]interface{}{"profile": what, "power": false})
+			_, e := n.api("/api/preset", map[string]interface{}{"profile": what, "power": false, "ack_game_running": true})
 			if e == nil {
 				n.note("Applied " + what + "; restart your game and compare benchmarks.")
 			}
@@ -346,6 +390,101 @@ func (n *nativeApp) act(key string) {
 		return
 	}
 	switch key {
+	case "pluscheckout":
+		server, email := strings.TrimSpace(n.read("plusurl")), strings.TrimSpace(n.read("plusemail"))
+		n.async(func() error {
+			n.mu.Lock()
+			p := n.plus
+			n.mu.Unlock()
+			p.Server = server
+			p.Email = email
+			link, e := plusCheckout(context.Background(), &p)
+			if e != nil {
+				return e
+			}
+			n.mu.Lock()
+			n.plus = p
+			n.mu.Unlock()
+			n.openLink(link)
+			n.note("Stripe Checkout opened. Return here and select CHECK PURCHASE STATUS after payment.")
+			return nil
+		})
+	case "pluspoll":
+		n.async(func() error {
+			n.mu.Lock()
+			p := n.plus
+			n.mu.Unlock()
+			active, e := plusPoll(context.Background(), &p)
+			if e != nil {
+				return e
+			}
+			n.mu.Lock()
+			n.plus = p
+			n.mu.Unlock()
+			if active {
+				n.note("SAWCHA PLUS is active on this installation.")
+			} else {
+				n.note("Plus not confirmed yet: " + p.Message)
+			}
+			return nil
+		})
+	case "plusactivate":
+		server, keyvalue := strings.TrimSpace(n.read("plusurl")), strings.TrimSpace(n.read("pluskey"))
+		n.async(func() error {
+			n.mu.Lock()
+			p := n.plus
+			n.mu.Unlock()
+			p.Server = server
+			p.LicenseKey = keyvalue
+			active, e := plusActivate(context.Background(), &p)
+			if e != nil {
+				return e
+			}
+			if !active {
+				return errors.New("Plus key was not accepted by the licensing server")
+			}
+			if e = savePlus(p); e != nil {
+				return e
+			}
+			n.mu.Lock()
+			n.plus = p
+			n.mu.Unlock()
+			n.put("pluskey", "")
+			n.note("SAWCHA PLUS activated successfully.")
+			return nil
+		})
+	case "plusverify":
+		n.async(func() error {
+			n.mu.Lock()
+			p := n.plus
+			n.mu.Unlock()
+			active, e := plusVerify(context.Background(), &p)
+			n.mu.Lock()
+			n.plus = p
+			n.mu.Unlock()
+			if e != nil {
+				return e
+			}
+			if !active {
+				n.note("Plus inactive; Basic tools remain available.")
+			} else {
+				n.note("Plus verified with server. Valid until " + p.Expires)
+			}
+			return nil
+		})
+	case "plusmanage":
+		n.async(func() error {
+			n.mu.Lock()
+			p := n.plus
+			n.mu.Unlock()
+			link, e := plusPortal(context.Background(), p)
+			if e != nil {
+				return e
+			}
+			n.openLink(link)
+			n.note("Opened secure Stripe subscription portal")
+			return nil
+		})
 	case "guest":
 		n.async(func() error {
 			_, e := n.api("/api/auth/guest", map[string]string{})
@@ -398,7 +537,16 @@ func (n *nativeApp) act(key string) {
 			return e
 		})
 	case "rescan":
-		n.async(func() error { n.app.scan(); n.note("Hardware and game scan complete."); return nil })
+		if !n.gameWarning("Running a deep hardware/game scan") {
+			return
+		}
+		n.async(func() error {
+			_, e := n.api("/api/scan", map[string]bool{"ack_game_running": true})
+			if e == nil {
+				n.note("Hardware/game scan started.")
+			}
+			return e
+		})
 	case "launch":
 		g, ok := n.game()
 		if !ok {
@@ -435,11 +583,11 @@ func (n *nativeApp) act(key string) {
 			return e
 		})
 	case "restore":
-		if !n.confirm("Restore the Windows registry and power plan values that SAWCHA backed up before applying presets?") {
+		if !n.confirm("Restore the Windows registry and power plan values that SAWCHA backed up before applying presets?") || !n.gameWarning("Restoring Windows settings") {
 			return
 		}
 		n.async(func() error {
-			_, e := n.api("/api/restore", map[string]string{})
+			_, e := n.api("/api/restore", map[string]bool{"ack_game_running": true})
 			if e == nil {
 				n.note("Original Windows settings restored.")
 			}
@@ -683,6 +831,10 @@ func (n *nativeApp) layout() {
 	}
 	if logged {
 		switch page {
+		case "plus":
+			positions["plusurl"] = winRect{int32(x + 20), 300, int32(x + usable - 25), 334}
+			positions["plusemail"] = winRect{int32(x + 20), 392, int32(x + usable/2), 430}
+			positions["pluskey"] = winRect{int32(x + 20), 581, int32(x + usable - 24), 619}
 		case "games":
 			positions["gamename"] = winRect{int32(x + 20), 608, int32(x + 200), 640}
 			positions["gamepath"] = winRect{int32(x + 210), 608, int32(x + usable - 22), 640}
@@ -728,7 +880,7 @@ func nativeWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		n.fontBig = makeFont(31, true)
 		n.fontHero = makeFont(53, true)
 		editStyle := uintptr(wsChild | wsBorder | esAutoHscroll)
-		for _, id := range []string{"googleid", "gamename", "gamepath", "dpi", "sensitivity", "polling", "question", "apikey", "hostname", "devpass", "presentmon"} {
+		for _, id := range []string{"googleid", "gamename", "gamepath", "dpi", "sensitivity", "polling", "question", "apikey", "hostname", "devpass", "presentmon", "plusurl", "plusemail", "pluskey"} {
 			style := editStyle
 			if id == "devpass" || id == "apikey" {
 				style |= esPassword
@@ -741,15 +893,30 @@ func nativeWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		n.put("sensitivity", "1.0")
 		n.put("polling", "1000")
 		n.put("hostname", "1.1.1.1")
+		n.put("plusurl", n.plus.Server)
+		n.put("plusemail", n.plus.Email)
 		n.put("question", "Why does my game stutter even at high FPS?")
 		n.layout()
-		setTimer.Call(hwnd, 1, 420, 0)
+		setTimer.Call(hwnd, 1, 1500, 0)
 		return 0
 	case wmSize:
 		n.layout()
 		invalidateRect.Call(hwnd, 0, 0)
 		return 0
-	case wmTimer, wmAppRefresh:
+	case wmTimer:
+		quiet := n.app.isQuietGaming()
+		if quiet != n.timerQuiet {
+			n.timerQuiet = quiet
+			if quiet {
+				setTimer.Call(hwnd, 1, 5000, 0)
+			} else {
+				setTimer.Call(hwnd, 1, 1500, 0)
+			}
+		}
+		n.layout()
+		invalidateRect.Call(hwnd, 0, 0)
+		return 0
+	case wmAppRefresh:
 		n.layout()
 		invalidateRect.Call(hwnd, 0, 0)
 		return 0
@@ -934,7 +1101,7 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 	n.text(dc, "OPTIMIZER", 22, 65, 215, 36, white, n.fontBold, false)
 	n.small(dc, "BUILT BY sawcha", 22, 108, 215)
 	for i, m := range menus {
-		yy := 155 + i*47
+		yy := 150 + i*43
 		if page == m.id {
 			n.rect(dc, 8, yy-3, 238, 42, cardAccent)
 			n.rect(dc, 8, yy-3, 4, 42, red)
@@ -948,9 +1115,18 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 		n.hits = append(n.hits, hitBox{winRect{8, int32(yy - 3), 246, int32(yy + 40)}, "nav:" + m.id})
 	}
 	n.text(dc, "NATIVE / NO JAVASCRIPT", 22, h-80, 220, 27, green, n.fontSmall, false)
-	n.text(dc, "v6.0  •  WINDOWS 10 + 11", 22, h-49, 225, 26, muted, n.fontSmall, false)
+	n.text(dc, "v8.0  •  WINDOWS 10 + 11", 22, h-49, 225, 26, muted, n.fontSmall, false)
 	n.rect(dc, 252, 0, w-252, 81, darker)
-	n.text(dc, "SYSTEM ACTIVE", 282, 17, 240, 38, green, n.fontBold, false)
+	game, prefs := n.app.guardSnapshot()
+	if game != "" {
+		n.text(dc, "GAME RUNNING", 282, 12, 270, 30, red, n.fontBold, false)
+		n.text(dc, short(game, 43), 282, 41, 320, 27, white, n.fontSmall, false)
+	} else {
+		n.text(dc, "SYSTEM ACTIVE", 282, 17, 240, 38, green, n.fontBold, false)
+	}
+	if game != "" && prefs.QuietWhileGaming {
+		n.text(dc, "QUIET MODE • SCANS PAUSED", 630, 20, w-680, 31, green, n.fontSmall, false)
+	}
 	n.text(dc, "SAWCHA / PERFORMANCE WORKSTATION", 520, 18, w-565, 38, muted, n.fontBold, false)
 	n.rect(dc, 252, h-66, w-252, 66, navBg)
 	if busy {
@@ -964,6 +1140,8 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 		cw = 530
 	}
 	switch page {
+	case "plus":
+		n.paintPlus(dc, x, cw)
 	case "overview":
 		n.paintOverview(dc, x, cw)
 	case "live":
@@ -1291,34 +1469,78 @@ func (n *nativeApp) paintDeveloper(dc uintptr, x, cw int) {
 		n.wrap(dc, "LOCKED. Sign in as a normal user first, then enter your own developer passphrase. A Google account is not automatically a developer account.", x+18, 453, cw-36, 124)
 	}
 }
-func (n *nativeApp) paintSettings(dc uintptr, x, cw int, identity string) {
-	n.heading(dc, "ACCOUNT + SYSTEM TOOLS", "Verified sign-in, official vendor control panels, and signature verification.", x, 106, cw)
-	n.panel(dc, x, 198, cw, 117)
-	n.text(dc, "ACTIVE ACCOUNT", x+18, 208, cw-36, 32, red, n.fontBold, false)
-	if identity == "" {
-		identity = "Local / Google user"
+func (n *nativeApp) paintPlus(dc uintptr, x, cw int) {
+	n.heading(dc, "PLUS MEMBERSHIP", "Basic is free. Plus is $1.99/month, managed securely through Stripe.", x, 106, cw)
+	n.mu.Lock()
+	p := n.plus
+	n.mu.Unlock()
+	plan := "BASIC / FREE"
+	if p.Plan == "plus" {
+		if p.Source == "complimentary" {
+			plan = "PRO / COMPLIMENTARY GIFT"
+		} else {
+			plan = "PLUS / SUBSCRIBER"
+		}
 	}
-	n.text(dc, short(identity, 90), x+18, 248, cw-205, 39, white, n.font, false)
-	n.button(dc, "logout", "SIGN OUT", x+cw-162, 249, 143, 42, false)
-	n.text(dc, "OFFICIAL DEVICE CONTROL PANELS", x, 344, cw, 32, red, n.fontBold, false)
-	tools := []struct{ key, title string }{{"nvidia", "NVIDIA"}, {"amd", "AMD"}, {"mouse", "MOUSE"}, {"controller", "CONTROLLER"}, {"keyboard", "KEYBOARD"}, {"graphics", "GRAPHICS"}, {"drivers", "DRIVER UPDATES"}, {"device", "DEVICE MANAGER"}, {"startup", "STARTUP APPS"}}
+	n.panel(dc, x, 196, cw, 84)
+	n.text(dc, "SUBSCRIPTION STATUS", x+18, 204, cw-40, 27, red, n.fontBold, false)
+	n.text(dc, plan+"    "+short(p.Message, 67), x+18, 235, cw-40, 32, white, n.fontSmall, false)
+	n.small(dc, "SECURE PLUS SERVER (HTTPS address supplied by the publisher)", x+18, 284, cw-40)
+	n.text(dc, "ENTER YOUR EMAIL FOR STRIPE CHECKOUT", x+18, 356, cw-40, 28, red, n.fontBold, false)
+	n.wrap(dc, "Plus unlocks extended frame-analysis guidance, advanced game profiles and future features. You always retain Basic tools.", x+18, 439, cw-40, 60)
+	n.button(dc, "pluscheckout", "SUBSCRIBE — $1.99 / MONTH", x+18, 505, 278, 44, true)
+	n.button(dc, "pluspoll", "CHECK PURCHASE STATUS", x+313, 505, 263, 44, false)
+	n.small(dc, "ALREADY HAVE A PLUS KEY? ENTER IT BELOW", x+18, 557, cw-40)
+	n.button(dc, "plusactivate", "ACTIVATE KEY", x+18, 639, 185, 44, true)
+	n.button(dc, "plusverify", "VERIFY MEMBERSHIP", x+218, 639, 219, 44, false)
+	n.button(dc, "plusmanage", "MANAGE OR CANCEL", x+452, 639, 192, 44, false)
+	n.wrap(dc, "Use SUBSCRIBE for $1.99/month or ACTIVATE KEY for a developer-issued complimentary Pro pass. Gift passes have no charge and expire on their issued date. Both types are verified by the server and tied to one installation. Only subscribers have Stripe billing to manage.", x+18, 701, cw-40, 95)
+}
+func (n *nativeApp) paintSettings(dc uintptr, x, cw int, identity string) {
+	n.heading(dc, "APPLICATION SETTINGS", "Manage gaming performance safety, monitoring overhead and device tools.", x, 106, cw)
+	game, p := n.app.guardSnapshot()
+	n.panel(dc, x, 195, cw, 312)
+	n.text(dc, "AUTOMATIC GAME GUARD", x+18, 204, cw-36, 33, red, n.fontBold, false)
+	if game != "" {
+		n.text(dc, "DETECTED: "+short(game, 50), x+18, 233, cw-36, 25, green, n.fontSmall, false)
+	} else {
+		n.text(dc, "No supported game currently detected", x+18, 233, cw-36, 25, muted, n.fontSmall, false)
+	}
+	onOff := func(enabled bool) string {
+		if enabled {
+			return "ON"
+		}
+		return "OFF"
+	}
+	n.button(dc, "pref:detect", "GAME DETECTION: "+onOff(p.DetectGames), x+18, 270, 285, 44, false)
+	n.wrap(dc, "Check running games about every 15 seconds. No game injection or administrator permission.", x+326, 272, cw-345, 52)
+	n.button(dc, "pref:quiet", "LOW-USAGE MODE: "+onOff(p.QuietWhileGaming), x+18, 331, 285, 44, true)
+	n.wrap(dc, "While gaming, Sawcha reduces its own live monitoring and redraw frequency.", x+326, 334, cw-345, 49)
+	n.button(dc, "pref:warn", "CHANGE WARNINGS: "+onOff(p.WarnBeforeChanges), x+18, 391, 285, 44, false)
+	n.wrap(dc, "Warn before system changes while a detected game is running. Enabled by default.", x+326, 393, cw-345, 48)
+	n.button(dc, "pref:interval", fmt.Sprintf("QUIET POLLING: %ds", p.QuietMonitorSeconds), x+18, 450, 285, 43, false)
+	n.button(dc, "pref:defaults", "RESET DEFAULTS", x+326, 450, 225, 43, false)
+	n.text(dc, "DEVICE CONTROL PANELS", x, 524, cw, 35, red, n.fontBold, false)
+	tools := []struct{ key, title string }{{"nvidia", "NVIDIA"}, {"amd", "AMD"}, {"mouse", "MOUSE"}, {"controller", "CONTROLLER"}, {"keyboard", "KEYBOARD"}, {"graphics", "GRAPHICS"}, {"drivers", "DRIVERS"}, {"device", "DEVICE MANAGER"}, {"startup", "STARTUP APPS"}}
 	for i, t := range tools {
-		col := i % 3
-		row := i / 3
+		col, row := i%3, i/3
 		bw := (cw - 26) / 3
 		xx := x + col*(bw+13)
-		yy := 384 + row*58
-		n.button(dc, "tool:"+t.key, t.title, xx, yy, bw, 42, false)
+		yy := 566 + row*52
+		n.button(dc, "tool:"+t.key, t.title, xx, yy, bw, 39, false)
 	}
-	n.text(dc, "APPLICATION TRUST + SIGNING", x, 584, cw, 35, red, n.fontBold, false)
-	n.wrap(dc, "Windows publisher verification requires a genuine code-signing certificate issued to you or your business. Your consent cannot replace the certificate. This app never disables Defender, SmartScreen or anti-cheat.", x, 630, cw-10, 72)
-	n.button(dc, "verify", "CHECK EXE SIGNATURE", x, 722, 261, 43, true)
-	n.button(dc, "signing", "MICROSOFT SIGNING GUIDE", x+275, 722, 270, 43, false)
+	if identity == "" {
+		identity = "Local user"
+	}
+	n.small(dc, "ACCOUNT: "+short(identity, 51), x, 734, cw-350)
+	n.button(dc, "verify", "VERIFY APP SIGNATURE", x, 765, 220, 39, false)
+	n.button(dc, "logout", "SIGN OUT", x+240, 765, 143, 39, false)
+	n.button(dc, "signing", "SIGNING HELP", x+400, 765, 170, 39, false)
 }
 
 func runNative(a *App) {
 	jar, _ := cookiejar.New(nil)
-	n := &nativeApp{app: a, controls: map[string]uintptr{}, page: "overview", selected: 0, status: "Starting system scanner...", client: &http.Client{Jar: jar, Timeout: 50 * time.Second}}
+	n := &nativeApp{app: a, controls: map[string]uintptr{}, plus: loadPlus(), page: "overview", selected: 0, status: "Starting system scanner...", client: &http.Client{Jar: jar, Timeout: 50 * time.Second}}
 	native = n
 	inst, _, _ := getModuleHandle.Call(0)
 	cur, _, _ := loadCursor.Call(0, 32512)
@@ -1331,6 +1553,18 @@ func runNative(a *App) {
 		return
 	}
 	n.hwnd = hwnd
+	go func() {
+		n.mu.Lock()
+		p := n.plus
+		n.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = plusVerify(ctx, &p)
+		n.mu.Lock()
+		n.plus = p
+		n.mu.Unlock()
+		n.invalidate()
+	}()
 	showWindow.Call(hwnd, swShow)
 	updateWindow.Call(hwnd)
 	var msg winMsg

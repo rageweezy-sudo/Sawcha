@@ -1,0 +1,11 @@
+# How complimentary Pro access is secured
+
+**Owner side (private, Windows-only):** Run the separately distributed `SAWCHA_OWNER.exe`, which creates an Ed25519 signing private key protected by Windows DPAPI for the current user. The owner can issue a time-limited, signed complimentary key or revoke a grant with a short-lived signed command. **The private signing program, its `.dpapi` key file and grant history must not be uploaded to the public repository.** The CLI is included only in the owner-private distribution.
+
+**Server side:** Set `SAWCHA_GIFT_PUBLIC_KEY` on your Railway PLUS API service using the PUBLIC base64 value shown by the owner tool. This is *not* a secret, but do not replace it casually: it verifies the owner-issued keys. The server requires its normal `SAWCHA_DATA_KEY` for encrypted state, persistent private volume and secure HTTPS domain. Public endpoints: `/v1/gift/redeem`, `/v1/verify`, and `/v1/gift/revoke` (the latter requires a signed, short-lived owner command). No route exists to mint passes.
+
+**Recipient side:** In Sawcha's Plus Membership tab, paste the `SAWCHA-GIFT-V1.` key, enter your official Plus server address, and activate. The first valid installation becomes associated with the key. The app verifies with the server on startup; it does not treat the word "Pro" in local settings as authorization. The private signing key is never delivered to recipients. Complimentary keys are not Stripe subscriptions, so the billing portal does not apply.
+
+**Limits and caveats:** A gift is valid for 1–365 days, restricted to one original installation, and revocable. This is licensing, not unbreakable DRM. Advanced users can alter or patch software they fully control; protect expensive hosted Pro features by validating entitlements on the **server**, not just hiding UI controls. Plan for support when Windows is reinstalled or a PC is replaced. Ensure your developer key is backed up in an encrypted and recoverable way.
+
+**Testing:** Cross-platform Go unit tests cover signing, expiry, invalid signatures, device limits, tampering, revocation and persistence. The Windows owner tool and DPAPI integration were cross-compiled; actual Windows security validation and service deployment must be tested before offering keys publicly.

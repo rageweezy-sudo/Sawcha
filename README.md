@@ -2,7 +2,7 @@
 
 A native Windows 10/11 desktop optimization and troubleshooting app, built in Go with a Win32 interface. This repository contains the **public customer application source**. It does **not** contain the private developer key vault, payment secrets, issued license keys, customer records, or signing credentials.
 
-> **Status:** Development release v6.0. The code was cross-compiled for Windows x64 and passed existing Go unit tests and `go vet` in a Linux build environment. The native UI, game discovery, NVIDIA monitoring, and performance changes still need validation on real Windows hardware. No FPS gain is guaranteed.
+> **Status:** Development release v8.0. The code was cross-compiled for Windows x64 and passed existing Go unit tests and `go vet` in a Linux build environment. The native UI, game discovery, NVIDIA monitoring, and performance changes still need validation on real Windows hardware. No FPS gain is guaranteed.
 
 ## Features
 
@@ -33,14 +33,14 @@ cd src/optimizer
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-H windowsgui' -o ../../SAWCHA_OPTIMIZER.exe .
 ```
 
-After building, use the included `packaging/` scripts if you want desktop shortcuts or signing verification. Review scripts before use. The program currently has **no embedded or hosted billing backend**, no Stripe Checkout/webhooks, and no live Plus key activation. Do not advertise paid entitlements as active.
+After building, use the included `packaging/` scripts if you want desktop shortcuts or signing verification. Review scripts before use. The program has a separate Plus API source, but the end-to-end Stripe billing system is still not configured or live-tested. The customer EXE is unsigned; do not advertise paid entitlements as active until tested.
 
 ## Safe configuration
 
 - Google OAuth: create a **Desktop** client in your own Google Cloud project, then enter the **client ID** in-app. Never commit OAuth client secrets or downloaded credential JSON.
 - Online AI: any user-supplied API key belongs only on the user's computer; never embed a key into this repository or a release binary.
 - Signing: obtain a legitimate certificate through your own account, keep the certificate/private key off GitHub, and sign only final binaries. Signing does not guarantee Defender acceptance.
-- Payments/licensing: must be implemented and secured as a **separate** private backend before offering Plus subscriptions. The developer vault is intentionally excluded.
+- Payments/licensing: the public customer-only backend is separate from the developer-only signing tool. Real payment keys, identity secrets and customer data remain private.
 
 See [SECURITY.md](SECURITY.md) and [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 
@@ -51,3 +51,19 @@ No antivirus disabling, anticheat bypass, aggressive overclocking, or hidden per
 ## License
 
 No open-source license has been granted in this repository. Public visibility alone does not grant permission to redistribute or modify the source.
+
+## Plus membership / billing integration
+
+The customer app now includes a **Plus Membership** screen. The separate Go backend at [`services/plus-api/`](services/plus-api/) supports Stripe-hosted Checkout, signed subscription webhooks, encrypted license storage, device-bound verification, and a customer billing portal. Backend code is public **but has no developer/admin endpoints or embedded secrets**. The original developer key vault remains separate and private.
+
+The proposed Plus plan is **$1.99 USD/month**; Basic remains free. Configure the hosted HTTPS service and **test-mode** Stripe credentials as described in [`docs/PLUS_BILLING.md`](docs/PLUS_BILLING.md) and [`services/plus-api/README.md`](services/plus-api/README.md). Never place Stripe keys or license records in the public repository.
+
+**Status:** The integration has local unit/integration tests using a mocked Stripe API and can cross-compile to a Windows executable. A live payment setup, hosted webhooks, persistent production database, full Windows UI test, and independent security audit remain necessary before charging customers. The app does not yet enforce every planned premium feature gate.
+
+## Complimentary Pro giveaways and game safety (v8)
+
+SAWCHA now accepts developer-signed complimentary Pro keys through the same hosted verification API, without Stripe payment. The owner signs each gift in a **separate private Windows tool**, not a key-generation page embedded in the customer app. The signed gift is bound to the first registered installation, expires after the chosen number of days, and can be revoked through a separately signed owner command. The private owner signing key (Windows DPAPI-protected) and its executable **do not belong in this public repository**. The server requires `SAWCHA_GIFT_PUBLIC_KEY`, which contains only a public key. See [`docs/COMPLIMENTARY_PRO.md`](docs/COMPLIMENTARY_PRO.md).
+
+The Settings tab supports automatic running-game detection, quiet in-game monitoring, a 60/90/120-second quiet polling interval, confirmation warnings for system changes and restoring defaults. A running game never triggers automatic registry writes or process termination. Monitoring returns to normal when the game closes. Windows installation identity is protected using DPAPI, not stored as transferable plaintext.
+
+See [`docs/PROJECT_HISTORY_PLAIN_ENGLISH.md`](docs/PROJECT_HISTORY_PLAIN_ENGLISH.md) for a plain-English feature and limitation list and [`docs/OPTIMIZER_RESEARCH.md`](docs/OPTIMIZER_RESEARCH.md) for researched design inspiration.

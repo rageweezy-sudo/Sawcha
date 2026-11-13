@@ -54,3 +54,28 @@ coverage.out
 Thumbs.db
 .vscode/
 .idea/
+
+# Plus billing secrets and customer/license data
+.env
+.env.*
+!.env.example
+plus.json
+plus.json.tmp
+SAWCHA_DATA_KEY
+*.pfx
+*.p12
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+*.db
+services/plus-api/data/
+
+# Private complimentary Pro signing key and local license store
+*.dpapi
+**/install.id.dpapi
+**/app_preferences.json
+**/plus.json
+SAWCHA_OWNER_ONLY/
+**/*ownerkey*
+**/*grant-history*

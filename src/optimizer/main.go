@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-const version = "6.0.0-native"
+const version = "8.0.0-native"
 
 //go:embed web/*
 var assets embed.FS
@@ -101,6 +101,8 @@ type App struct {
 	token       string
 	admin       bool
 	lastMonitor time.Time
+	preferences AppPreferences
+	runningGame string
 	root        string
 	port        int
 	stage       string
@@ -127,6 +129,7 @@ func main() {
 	_, _ = rand.Read(b)
 	a := &App{root: root, admin: isElevated(), token: hex.EncodeToString(b), stage: "Initializing engine", progress: 2, hardware: map[string]interface{}{}, games: []Game{}, advice: []Advice{}, jobs: []Job{}, history: []Benchmark{}, live: map[string]interface{}{}, config: SavedConfig{ExeOverrides: map[string]string{}, Preset: "Stock"}}
 	a.loadConfig()
+	a.loadAppPreferences()
 	a.loadHistory()
 	a.initAuth()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -142,6 +145,7 @@ func main() {
 	}()
 	go a.scan()
 	go a.pollLoop()
+	go a.gameWatchLoop()
 	runNative(a)
 	_ = server.Close()
 }
@@ -321,6 +325,7 @@ func (a *App) routes() http.Handler {
 	api("/api/benchmark/import", a.importHandler)
 	api("/api/benchmark/capture", a.captureHandler)
 	api("/api/settings", a.settingsHandler)
+	api("/api/preferences", a.preferencesHandler)
 	api("/api/guides", a.guidesHandler)
 	api("/api/sensitivity", a.sensitivityHandler)
 	api("/api/assistant/chat", a.advisorHandler)
@@ -352,7 +357,7 @@ func decode(r *http.Request, v interface{}) error {
 func (a *App) stateHandler(w http.ResponseWriter, r *http.Request) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	send(w, map[string]interface{}{"version": version, "stage": a.stage, "progress": a.progress, "ready": a.ready, "scanError": a.scanError, "scanned": a.scanned, "hardware": a.hardware, "games": a.games, "advice": a.advice, "config": a.config, "live": a.live, "jobs": a.jobs, "history": a.history, "logs": a.logEntries, "capturing": a.capturing, "folder": a.root, "administrator": a.admin, "presentMonFound": findPresentMon(a.config.PresentMonPath) != "", "identity": func() LoginIdentity { id, _ := a.loginIdentity(r); return id }()})
+	send(w, map[string]interface{}{"version": version, "stage": a.stage, "progress": a.progress, "ready": a.ready, "scanError": a.scanError, "scanned": a.scanned, "hardware": a.hardware, "games": a.games, "advice": a.advice, "config": a.config, "live": a.live, "jobs": a.jobs, "history": a.history, "logs": a.logEntries, "capturing": a.capturing, "folder": a.root, "administrator": a.admin, "presentMonFound": findPresentMon(a.config.PresentMonPath) != "", "gameGuard": map[string]any{"running": a.runningGame, "preferences": a.preferences}, "identity": func() LoginIdentity { id, _ := a.loginIdentity(r); return id }()})
 }
 func (a *App) liveHandler(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
@@ -364,6 +369,17 @@ func (a *App) liveHandler(w http.ResponseWriter, r *http.Request) {
 func (a *App) scanHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		bad(w, "POST required", 405)
+		return
+	}
+	var in struct {
+		AckGameRunning bool `json:"ack_game_running"`
+	}
+	if e := decode(r, &in); e != nil {
+		bad(w, e.Error(), 400)
+		return
+	}
+	if e := a.changeDuringGameWarning(in.AckGameRunning); e != nil {
+		bad(w, e.Error(), 409)
 		return
 	}
 	a.mu.RLock()
@@ -533,7 +549,15 @@ func (a *App) pollLoop() {
 		a.mu.RLock()
 		recentlyViewed := time.Since(a.lastMonitor) < 18*time.Second
 		a.mu.RUnlock()
-		if !recentlyViewed && time.Since(lastSample) < 30*time.Second {
+		interval := 30 * time.Second
+		if recentlyViewed {
+			interval = 5 * time.Second
+		}
+		if a.isQuietGaming() {
+			_, p := a.guardSnapshot()
+			interval = time.Duration(p.QuietMonitorSeconds) * time.Second
+		}
+		if time.Since(lastSample) < interval {
 			continue
 		}
 		lastSample = time.Now()
@@ -1003,8 +1027,9 @@ func (a *App) launchGameHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type reqPreset struct {
-	Profile string `json:"profile"`
-	Power   bool   `json:"power"`
+	AckGameRunning bool   `json:"ack_game_running"`
+	Profile        string `json:"profile"`
+	Power          bool   `json:"power"`
 }
 type RegChoice struct {
 	Key   string
@@ -1066,6 +1091,10 @@ func (a *App) presetHandler(w http.ResponseWriter, r *http.Request) {
 		bad(w, e.Error(), 400)
 		return
 	}
+	if e := a.changeDuringGameWarning(v.AckGameRunning); e != nil {
+		bad(w, e.Error(), 409)
+		return
+	}
 	if v.Profile != "Competitive" && v.Profile != "Balanced" && v.Profile != "Creator" {
 		bad(w, "Unknown preset", 400)
 		return
@@ -1118,6 +1147,17 @@ func (a *App) presetHandler(w http.ResponseWriter, r *http.Request) {
 func (a *App) restoreHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		bad(w, "POST required", 405)
+		return
+	}
+	var confirm struct {
+		AckGameRunning bool `json:"ack_game_running"`
+	}
+	if e := decode(r, &confirm); e != nil {
+		bad(w, e.Error(), 400)
+		return
+	}
+	if e := a.changeDuringGameWarning(confirm.AckGameRunning); e != nil {
+		bad(w, e.Error(), 409)
 		return
 	}
 	a.mu.RLock()
@@ -1228,13 +1268,18 @@ func (a *App) toolHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type reqDiagnostic struct {
-	Kind string `json:"kind"`
+	AckGameRunning bool   `json:"ack_game_running"`
+	Kind           string `json:"kind"`
 }
 
 func (a *App) diagnosticHandler(w http.ResponseWriter, r *http.Request) {
 	var req reqDiagnostic
 	if err := decode(r, &req); err != nil {
 		bad(w, err.Error(), 400)
+		return
+	}
+	if e := a.changeDuringGameWarning(req.AckGameRunning); e != nil {
+		bad(w, e.Error(), 409)
 		return
 	}
 	var exe string
