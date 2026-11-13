@@ -64,6 +64,11 @@ func (a *App) writeAppPreferences(p AppPreferences) error {
 	a.mu.Unlock()
 	return nil
 }
+func (a *App) preferencesSnapshot() AppPreferences {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.preferences
+}
 func (a *App) guardSnapshot() (string, AppPreferences) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
