@@ -58,3 +58,13 @@ This is a factual project change log based on the requests in this conversation.
 - Guaranteed FPS gains, automatic “AI tuning” that rewrites graphics settings, or every requested optimization from other proprietary products.
 
 **Bottom line:** This release improves legitimacy and game safety while giving the developer an actually separate, signed complimentary-license workflow. It is a development release, not a production-certified FPS booster or finished payments business.
+
+## 7. Next Gen v9 — evidence-driven performance and GPU compute
+
+- Used research from Intel PresentMon 2.6 to measure **CPU and GPU frame activity** when the capture file provides that information.
+- Stopped mixing unrelated programs' captured frame data; separate real game frames from generated frames when the CSV identifies them.
+- Added a native **Insight Engine** screen that ranks potential improvements from actual captured measurements, displays a red/gray frame-time graph, and explains the risks and how to test each change.
+- Added before/after warnings for frame pacing getting worse even if average FPS rises. One pair of runs is a clue, not proof of a faster PC.
+- Added **GPU Compute Lab** based on original research about NVIDIA compute workloads. It identifies RTX hardware families but does **not** copy the Linux kernel unlock, make unsupported Windows firmware patches, or claim that tensor unlocks increase game FPS.
+- Extended automated tests for these features and kept the native no-JavaScript Windows UI.
+- Retained separate audio, VM/kernel diagnostics, and debloat research workstreams from the other related chats; they are not falsely marked as fully implemented here.
