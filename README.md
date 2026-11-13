@@ -67,3 +67,11 @@ SAWCHA now accepts developer-signed complimentary Pro keys through the same host
 The Settings tab supports automatic running-game detection, quiet in-game monitoring, a 60/90/120-second quiet polling interval, confirmation warnings for system changes and restoring defaults. A running game never triggers automatic registry writes or process termination. Monitoring returns to normal when the game closes. Windows installation identity is protected using DPAPI, not stored as transferable plaintext.
 
 See [`docs/PROJECT_HISTORY_PLAIN_ENGLISH.md`](docs/PROJECT_HISTORY_PLAIN_ENGLISH.md) for a plain-English feature and limitation list and [`docs/OPTIMIZER_RESEARCH.md`](docs/OPTIMIZER_RESEARCH.md) for researched design inspiration.
+
+## Audio Studio / system EQ (development branch)
+
+The **Audio Studio** native page now has an editable 18-band parametric EQ, preamp and Flat/Footsteps/Competitive FPS/Balanced/Music starter profiles. The **Audio Setup Wizard** lets users select a Basic/Pro setup preference and intended components, then guides them to install the separately maintained [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) audio engine, select their Windows playback endpoint, and apply a managed EQ configuration with rollback. Presets remain local unless the user explicitly chooses **APPLY TO WINDOWS**.
+
+This is intended for Intel/AMD x64 Windows 10/11 shared-mode audio, not every possible audio API or driver. The Equalizer APO installer and endpoint configuration are user-controlled. The wizard does **not** silently install third-party drivers, and **Pro selection is not a verified paid entitlement**. A virtual SAWCHA driver and real microphone routing / AI denoising are not yet implemented. CI passing is not equivalent to listening tests on actual Windows devices.
+
+See [docs/AUDIO_STUDIO_SETUP.md](docs/AUDIO_STUDIO_SETUP.md) for setup, troubleshooting and rollback; [docs/AUDIO_STUDIO_SPEC.md](docs/AUDIO_STUDIO_SPEC.md) for technical design. The pull-request Windows CI uploads an **unsigned development binary**, not a signed consumer release.
