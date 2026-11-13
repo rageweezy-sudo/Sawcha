@@ -75,3 +75,10 @@ The **Audio Studio** native page now has an editable 18-band parametric EQ, prea
 This is intended for Intel/AMD x64 Windows 10/11 shared-mode audio, not every possible audio API or driver. The Equalizer APO installer and endpoint configuration are user-controlled. The wizard does **not** silently install third-party drivers, and **Pro selection is not a verified paid entitlement**. A virtual SAWCHA driver and real microphone routing / AI denoising are not yet implemented. CI passing is not equivalent to listening tests on actual Windows devices.
 
 See [docs/AUDIO_STUDIO_SETUP.md](docs/AUDIO_STUDIO_SETUP.md) for setup, troubleshooting and rollback; [docs/AUDIO_STUDIO_SPEC.md](docs/AUDIO_STUDIO_SPEC.md) for technical design. The pull-request Windows CI uploads an **unsigned development binary**, not a signed consumer release.
+
+## Strict latency protection (default ON)
+
+SAWCHA's default is **leave unproven Windows changes alone**. Strict Latency Protection blocks speculative registry, Game Mode/Game DVR, power-plan and pointer-speed modifications. When a recognized game is running, SAWCHA pauses recurring heavyweight PowerShell/WMI live monitoring. For optional comparisons, **Frame Time Lab** captures before/after PresentMon data and warns on possible P99/median/1%-low regression; a single test is **not proof** of improved input-to-display, network, or audio latency. Users may explicitly opt out of strict protection to experiment, with existing restore options.
+
+Audio Studio now avoids generating no-op filters for the Flat preset and skips 0 dB filters on other EQ curves. Non-flat EQ can still use CPU and affect signal phase/group delay; actual endpoint processing and total latency need real Windows hardware measurements. See [docs/LATENCY_SAFETY.md](docs/LATENCY_SAFETY.md) for the exact policy and testing requirements.
+
