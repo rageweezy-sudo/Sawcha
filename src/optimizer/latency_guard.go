@@ -92,3 +92,9 @@ func (a *App) speculativeSystemChangesAllowed() error {
 func shouldSkipHeavyMonitor(game string,prefs AppPreferences) bool {
  return game!="" && prefs.DetectGames && (prefs.LatencySafe||prefs.QuietWhileGaming)
 }
+
+func shouldRunLiveMonitor(recentlyViewed bool,game string,prefs AppPreferences) bool {
+ if shouldSkipHeavyMonitor(game,prefs){return false}
+ // Strict mode is idle without background PowerShell/WMI collection.
+ return !prefs.LatencySafe||recentlyViewed
+}
