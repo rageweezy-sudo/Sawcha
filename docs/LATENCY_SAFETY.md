@@ -6,7 +6,7 @@
 
 - **STRICT LATENCY: ON** in Settings by default, including users upgrading from an older `app_preferences.json` that did not contain the setting.
 - Automatic game process detection uses read-only Windows Toolhelp snapshots. It does not inject into games, hook mouse input, or change thread/interrupt priorities.
-- During a recognized running game, **no recurring heavy PowerShell / CIM / WMI live telemetry is launched**, even if the regular quiet-monitor toggle was disabled. The UI uses a reduced refresh cadence. Monitoring resumes when game detection says the game closed.
+- With strict protection ON, **idle background PowerShell/CIM/WMI telemetry is paused** unless the user explicitly opens Live Monitor (which uses a reduced 15-second sampling interval). During a recognized running game, heavy telemetry stays paused even if the user opens Live Monitor. The UI uses a reduced refresh cadence and normal monitoring becomes available after the game closes.
 - Windows registry/Game DVR/Game Mode/power-plan preset mutations are **blocked** by default. The user can explicitly turn strict protection off in Settings *after a warning*, record before/after data, and opt into those experiments. Restore is always available.
 - Pointer-speed changes are similarly blocked under strict protection; mouse settings are not a proven shortcut to hardware input latency.
 - Existing scans, SFC/DISM repairs, sound setup, app sign-in and read-only diagnostics are still available, but may use resources when invoked explicitly. Avoid running scans or installs during matches.
