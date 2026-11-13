@@ -63,3 +63,11 @@ func TestStrictModeSkipsHeavyMonitoring(t *testing.T) {
  prefs.LatencySafe=false;prefs.QuietWhileGaming=false
  if shouldSkipHeavyMonitor("Siege",prefs) {t.Fatal("explicit opt-out should return to regular monitoring")}
 }
+
+func TestStrictModeBlocksPointerSpeedChanges(t *testing.T) {
+ app:=&App{preferences:defaultAppPreferences()}
+ req:=httptest.NewRequest("POST","/api/mouse",strings.NewReader(`{"speed":10}`))
+ rec:=httptest.NewRecorder()
+ app.mouseHandler(rec,req)
+ if rec.Code!=http.StatusConflict {t.Fatalf("mouse settings changed in latency-safe mode: %d %s",rec.Code,rec.Body.String())}
+}
