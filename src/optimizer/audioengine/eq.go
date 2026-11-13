@@ -91,9 +91,12 @@ func NewEqualizer(sampleRate,channels int,config EQConfig) (*Equalizer,error) {
     e:=&Equalizer{cfg:config,channels:channels,preamp:math.Pow(10,config.PreampDB/20)}
     e.filters=make([][]biquad,channels)
     for ch:=range e.filters {
-        e.filters[ch]=make([]biquad,Bands)
+        e.filters[ch]=make([]biquad,0,Bands)
         for i,hz:=range FrequenciesHz {
-            e.filters[ch][i]=peakFilter(float64(sampleRate),hz,config.GainsDB[i])
+            // Zero-gain filters are exact identities. Skipping them reduces
+            // work per frame and keeps the Flat preset allocation-free in DSP.
+            if config.GainsDB[i]==0 {continue}
+            e.filters[ch]=append(e.filters[ch],peakFilter(float64(sampleRate),hz,config.GainsDB[i]))
         }
     }
     return e,nil
