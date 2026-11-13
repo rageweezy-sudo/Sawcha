@@ -45,3 +45,15 @@ func TestNoApplyWhenAPOAbsent(t *testing.T) {
  p,_:=Preset("Flat")
  if err:=ApplyAPO(t.TempDir(),p,"");err==nil{t.Fatal("missing APO config unexpectedly accepted")}
 }
+
+func TestRefuseToRemoveEditedManagedBlock(t *testing.T) {
+ d:=makeConfig(t);p,_:=Preset("Flat")
+ if err:=ApplyAPO(d,p,"Speakers");err!=nil{t.Fatal(err)}
+ entry:=filepath.Join(d,"config.txt")
+ original,_:=os.ReadFile(entry)
+ edited:=strings.Replace(string(original),"Device: all","Device: user-modified",1)
+ if err:=os.WriteFile(entry,[]byte(edited),0600);err!=nil{t.Fatal(err)}
+ if err:=RemoveAPO(d);err==nil{t.Fatal("edited block unexpectedly deleted")}
+ after,_:=os.ReadFile(entry)
+ if string(after)!=edited{t.Fatal("failed rollback changed user data")}
+}
