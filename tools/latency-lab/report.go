@@ -14,6 +14,7 @@ type Report struct {
 	Scope         string         `json:"scope"`
 	Architecture  string         `json:"architecture"`
 	WindowsData   map[string]any `json:"windowsData"`
+	WinSlopAudit  *WinSlopAudit  `json:"windowsSlopAudit,omitempty"`
 	Warnings      []string       `json:"warnings"`
 	Assessment    []string       `json:"assessment"`
 	Privacy       string         `json:"privacy"`

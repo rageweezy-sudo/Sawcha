@@ -13,6 +13,14 @@ A separate Windows 10/11 x64 test application to collect detailed read-only perf
 - **Offline analysis** — basic rules/recommendations, no API key or outbound request required.
 - **Export** — download or copy the local JSON and submit it manually to ChatGPT for further review.
 
+## WinSlop-inspired, non-destructive inspector
+
+- **Windows cleanup inspection**, run only when you click **INSPECT WINDOWS FEATURES**, reports explicit registry values for Game DVR, Widgets, suggestions, ads/personalization, Copilot/Recall policies, plus a small allowlisted list of optional AppX package names and startup-entry *counts* (not command lines). Windows defaults are not inferred from missing registry keys.
+- **Original source, attribution-only integration:** builtbybel's original WinSlop/Winslopr project was renamed to **FluentTweaker**. SAWCHA does not bundle, copy, translate, alter, or relicense that project, its scripts or its binaries. The official publisher release page is linked by an ordinary browser link, not automatically installed or executed: https://github.com/builtbybel/FluentTweaker/releases .
+- **Zero remediation capability:** the companion has **no debloat, registry-write, service-stop, package-removal, or apply endpoints**. It cannot change any Windows setting from this inspector, even after scanning. To change Windows, use official tools separately with independent user review and consent.
+- All observed results can be copied and included in the local report for offline analysis or optional explicitly consented AI analysis. Installed app names do not prove those apps run or cause latency.
+- Unverified sources and repackaged installers are deliberately excluded. **No upstream license was verified for code redistribution**, so no upstream code or assets were reused.
+
 ## Run and build
 
 Run the unsigned test build EXE on Windows 10/11 x64. The tool starts a browser UI on **127.0.0.1** using a random OS-selected port. It does not open a firewall port or install anything. Close the console window to exit. The only outbound request is a deliberate **ASK OPENAI** action using the personal API key.

@@ -16,12 +16,13 @@ import (
 var assets embed.FS
 
 type server struct {
-	token  string
-	origin string
-	client *http.Client
-	mu     sync.RWMutex
-	latest *Report
-	workMu sync.Mutex
+	token      string
+	origin     string
+	client     *http.Client
+	mu         sync.RWMutex
+	latest     *Report
+	latestSlop *WinSlopAudit
+	workMu     sync.Mutex
 }
 
 func (s *server) routes() http.Handler {
@@ -73,6 +74,7 @@ func (s *server) routes() http.Handler {
 		})
 	}
 	api("/api/scan", s.scanHandler)
+	api("/api/winslop/inspect", s.winSlopInspectHandler)
 	api("/api/report", s.reportHandler)
 	api("/api/chat", s.chatHandler)
 	api("/api/trace", s.traceHandler)
@@ -131,6 +133,7 @@ func (s *server) scanHandler(w http.ResponseWriter, r *http.Request) {
 	defer s.workMu.Unlock()
 	report := collectReport(r.Context(), options.Deep)
 	s.mu.Lock()
+	report.WinSlopAudit = s.latestSlop
 	s.latest = &report
 	s.mu.Unlock()
 	sendJSON(w, report)

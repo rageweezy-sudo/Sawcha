@@ -60,3 +60,48 @@ async function ask(local){
 $('local').onclick=()=>ask(true);
 $('ask').onclick=()=>ask(false);
 $('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();ask(false)}});
+
+
+let winSlopAudit = null;
+function auditDetail(label, value) {
+ const line=document.createElement('div');line.className='auditline';
+ const title=document.createElement('b');title.textContent=label;
+ const detail=document.createElement('span');detail.textContent=value;
+ line.append(title,detail);return line;
+}
+function renderWinSlopAudit(audit) {
+ winSlopAudit=audit;
+ const host=$('slopfindings');host.replaceChildren();
+ const groups=new Map();
+ for(const item of audit.findings||[]) {
+    if(!groups.has(item.category))groups.set(item.category,[]);
+    groups.get(item.category).push(item);
+ }
+ for(const [category,findings] of groups) {
+   const group=document.createElement('section');group.className='auditgroup';
+   const head=document.createElement('h3');head.textContent=category;group.append(head);
+   for(const item of findings){
+     const block=document.createElement('details');block.className='auditentry';
+     const title=document.createElement('summary');title.textContent=item.title+' · '+item.state;
+     block.append(title,auditDetail('Observation',item.evidence),auditDetail('What it means',item.explanation),auditDetail('Latency relevance',item.performance));
+     group.append(block);
+   }
+   host.append(group);
+ }
+ $('slopcopy').disabled=false;
+ setStatus('slopstatus',`Inspected ${audit.findings?.length||0} selected items at ${audit.timestampUtc}. No Windows settings were modified. Registry values are observations, not proof of feature activation or performance improvement.`);
+}
+$('slopscan').onclick=async()=>{
+ if(busy)return;busy=true;$('slopscan').disabled=true;
+ setStatus('slopstatus','Read-only Windows policy and optional app inspection (no system changes)...');
+ try {
+    const audit=await api('/api/winslop/inspect',{});renderWinSlopAudit(audit);
+    if(report) {report=await api('/api/report',{});renderReport();}
+ }catch(e){setStatus('slopstatus',e.message,true)}
+ finally{busy=false;$('slopscan').disabled=false}
+};
+$('slopcopy').onclick=async()=>{
+ if(!winSlopAudit)return;
+ try{await navigator.clipboard.writeText(JSON.stringify(winSlopAudit,null,2));setStatus('slopstatus','WinSlop-style inspection copied. Review before sharing; this is not output from the upstream app.');}
+ catch(e){setStatus('slopstatus','Clipboard unavailable; use the full JSON export after a system scan.',true)}
+};
