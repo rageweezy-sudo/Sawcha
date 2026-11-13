@@ -1,6 +1,6 @@
 # SAWCHA Audio Studio: implementation design
 
-**Status (2026-11-13):** The `src/optimizer/audioengine` package contains **offline, user-mode DSP primitives and tests only**. No real-time Windows audio capture, audio endpoint routing, APO, signed driver, or integrated UI is included in this branch. Do not advertise the audio effects as active in production.
+**Status (2026-11-13):** This branch now includes offline Go DSP primitives, a native 18-band EQ editor with +/- controls, a selectable Basic/Pro audio setup wizard, and an Equalizer APO backend that generates and applies a managed `SAWCHA_EQ.txt` filter file after users install/attach Equalizer APO. Windows CI checks compile and unit tests. **No device-audible test, signed SAWCHA driver, real microphone routing, virtual endpoints, denoising service, or production Pro audio entitlement has been verified.** Do not advertise standalone audio features as shipping until real Windows hardware tests pass.
 
 ## User goal
 
@@ -36,9 +36,10 @@ Bands (Hz): `32, 45, 63, 90, 125, 180, 250, 350, 500, 700, 1000, 1400, 2000, 280
 
 ## Development order and acceptance criteria
 
-- **Phase A: DSP foundation (this branch):** filter bank, preset model and mic expander/compressor/ceiling with unit tests. Pure Go, no new dependencies.
-- **Phase B: Configuration/UI:** add persistent settings under the user's `LOCALAPPDATA` profile, native 18 sliders, preset selector, microphone controls, validation, import/export, preview meters and explicit not-connected indicator until routed.
-- **Phase C: WASAPI integration:** select capture/render endpoints and verify audible effects with standard Windows test programs. Use durable device IDs; respond to sample rate, device-switch and unplug events. Test 44.1k/48k and multiple headsets.
+- **Phase A: DSP foundation (implemented, unit-tested):** filter bank, preset model and mic expander/compressor/ceiling primitives. Pure Go, no new dependencies.
+- **Phase B: Native EQ editor / setup wizard (implemented; Windows hardware UI test pending):** save audio preferences, choose Basic/Pro setup labels, enable EQ module, modify each of 18 bands in half-dB increments, choose a starter preset and apply or remove the managed Equalizer APO Include. Audio Pro selection is not an entitlement; microphone selection does not install processing.
+- **Phase C: Equalizer APO real-device verification (pending):** on Windows 10 and Windows 11 x64 Intel/AMD machines, install Equalizer APO from the publisher, attach a shared-mode playback endpoint, reboot, apply SAWCHA EQ, confirm an audible change at a safe volume, verify no driver breakage and test rollback. The Windows CI environment alone does not establish success.
+- **Phase C2: Optional standalone WASAPI service (pending):** select capture/render endpoints and verify real-time streams where necessary, including microphone processing, virtual endpoint routing and device changes. Test 44.1/48 kHz on multiple headsets.
 - **Phase D: Production microphone processing:** integrate and verify RNNoise (noise suppression) and/or WebRTC Audio Processing (AEC, AGC), after reviewing licenses, ABI, CPU/latency budgets and build dependencies. Add hold/hysteresis expander, loudness target, smooth limiter, mic monitor and device continuity testing.
 - **Phase E: Optional virtual devices:** separately test signed virtual driver on clean Windows 10/11 virtual machines with Memory Integrity and real Windows hardware. Add secure install/uninstall/rollback. Require explicit user consent and administrator permission at installation.
 - **Phase F: Game-specific auto-switch:** game process detection outside the game process; compare footprints, sound localization and frame times against bypassed audio, including while SAWCHA enters low-usage game mode.
