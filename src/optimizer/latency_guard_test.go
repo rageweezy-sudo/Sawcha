@@ -71,3 +71,12 @@ func TestStrictModeBlocksPointerSpeedChanges(t *testing.T) {
  app.mouseHandler(rec,req)
  if rec.Code!=http.StatusConflict {t.Fatalf("mouse settings changed in latency-safe mode: %d %s",rec.Code,rec.Body.String())}
 }
+
+func TestStrictModeRunsHeavyTelemetryOnlyWhenLiveMonitorViewed(t *testing.T) {
+ prefs:=defaultAppPreferences()
+ if shouldRunLiveMonitor(false,"",prefs) {t.Fatal("background WMI must be off in strict mode")}
+ if !shouldRunLiveMonitor(true,"",prefs) {t.Fatal("explicit live view must be allowed")}
+ if shouldRunLiveMonitor(true,"Siege",prefs) {t.Fatal("live WMI must pause for a detected game")}
+ prefs.LatencySafe=false
+ if !shouldRunLiveMonitor(false,"",prefs) {t.Fatal("opt-out may use standard background live telemetry")}
+}
