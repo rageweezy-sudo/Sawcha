@@ -159,6 +159,7 @@ var (
 
 var menus = []struct{ id, name, detail string }{
 	{"overview", "DASHBOARD", "Your system at a glance"},
+	{"audio", "AUDIO STUDIO", "18-band EQ / selective setup"},
 	{"plus", "PLUS MEMBERSHIP", "Secure Stripe subscription"},
 	{"live", "LIVE MONITOR", "Real resource usage"},
 	{"games", "GAME LIBRARY", "Launch & profiles"},
@@ -308,6 +309,10 @@ func (n *nativeApp) gameWarning(action string) bool {
 }
 
 func (n *nativeApp) act(key string) {
+	if strings.HasPrefix(key, "audio:") {
+		n.audioAction(strings.TrimPrefix(key, "audio:"))
+		return
+	}
 	if strings.HasPrefix(key, "nav:") {
 		n.pageTo(strings.TrimPrefix(key, "nav:"))
 		return
@@ -831,6 +836,8 @@ func (n *nativeApp) layout() {
 	}
 	if logged {
 		switch page {
+		case "audio-setup":
+			positions["audiodevice"] = winRect{int32(x + 15), 654, int32(x + usable - 186), 686}
 		case "plus":
 			positions["plusurl"] = winRect{int32(x + 20), 300, int32(x + usable - 25), 334}
 			positions["plusemail"] = winRect{int32(x + 20), 392, int32(x + usable/2), 430}
@@ -880,7 +887,7 @@ func nativeWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		n.fontBig = makeFont(31, true)
 		n.fontHero = makeFont(53, true)
 		editStyle := uintptr(wsChild | wsBorder | esAutoHscroll)
-		for _, id := range []string{"googleid", "gamename", "gamepath", "dpi", "sensitivity", "polling", "question", "apikey", "hostname", "devpass", "presentmon", "plusurl", "plusemail", "pluskey"} {
+		for _, id := range []string{"googleid", "gamename", "gamepath", "dpi", "sensitivity", "polling", "question", "apikey", "hostname", "devpass", "presentmon", "plusurl", "plusemail", "pluskey", "audiodevice"} {
 			style := editStyle
 			if id == "devpass" || id == "apikey" {
 				style |= esPassword
@@ -896,6 +903,7 @@ func nativeWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		n.put("plusurl", n.plus.Server)
 		n.put("plusemail", n.plus.Email)
 		n.put("question", "Why does my game stutter even at high FPS?")
+		n.put("audiodevice", n.app.config.Audio.DevicePattern)
 		n.layout()
 		setTimer.Call(hwnd, 1, 1500, 0)
 		return 0
@@ -1101,18 +1109,18 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 	n.text(dc, "OPTIMIZER", 22, 65, 215, 36, white, n.fontBold, false)
 	n.small(dc, "BUILT BY sawcha", 22, 108, 215)
 	for i, m := range menus {
-		yy := 150 + i*43
+		yy := 143 + i*36
 		if page == m.id {
-			n.rect(dc, 8, yy-3, 238, 42, cardAccent)
-			n.rect(dc, 8, yy-3, 4, 42, red)
+			n.rect(dc, 8, yy-3, 238, 32, cardAccent)
+			n.rect(dc, 8, yy-3, 4, 32, red)
 		}
-		n.text(dc, m.name, 22, yy+1, 216, 30, func() uintptr {
+		n.text(dc, m.name, 22, yy+1, 216, 27, func() uintptr {
 			if page == m.id {
 				return red
 			}
 			return white
 		}(), n.fontSmall, false)
-		n.hits = append(n.hits, hitBox{winRect{8, int32(yy - 3), 246, int32(yy + 40)}, "nav:" + m.id})
+		n.hits = append(n.hits, hitBox{winRect{8, int32(yy - 3), 246, int32(yy + 30)}, "nav:" + m.id})
 	}
 	n.text(dc, "NATIVE / NO JAVASCRIPT", 22, h-80, 220, 27, green, n.fontSmall, false)
 	n.text(dc, "v8.0  •  WINDOWS 10 + 11", 22, h-49, 225, 26, muted, n.fontSmall, false)
@@ -1144,6 +1152,10 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 		n.paintPlus(dc, x, cw)
 	case "overview":
 		n.paintOverview(dc, x, cw)
+	case "audio":
+		n.paintAudioStudio(dc, x, cw)
+	case "audio-setup":
+		n.paintAudioSetup(dc, x, cw)
 	case "live":
 		n.paintLive(dc, x, cw)
 	case "games":
