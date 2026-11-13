@@ -7,7 +7,6 @@ import (
  "path/filepath"
  "regexp"
  "strings"
- "time"
 )
 
 // APO integration uses the separately installed Equalizer APO, never a kernel
@@ -72,11 +71,10 @@ func ApplyAPO(configDir string,eq EQConfig,device string) error {
  if strings.Count(prior,beginMarker)!=strings.Count(prior,endMarker){return errors.New("partial SAWCHA block in Equalizer APO config: repair manually")}
  if strings.Count(prior,beginMarker)>1{return errors.New("multiple SAWCHA blocks found in Equalizer APO config")}
  if strings.Contains(prior,beginMarker) {
-  before,after,ok:=strings.Cut(prior,beginMarker)
-  if !ok{return errors.New("SAWCHA marker missing")}
-  _,suffix,ok:=strings.Cut(after,endMarker)
-  if !ok{return errors.New("SAWCHA closing marker missing")}
-  prior=strings.TrimRight(before,"\r\n")+strings.TrimLeft(suffix,"\r\n")
+    expected:=beginMarker+"\nDevice: all\nInclude: "+managedFile+"\n"+endMarker
+    if !strings.Contains(prior,expected){return errors.New("modified SAWCHA block; refusing to overwrite user changes")}
+    // Reapplying edits only the owned filter file, never the user's entry config.
+    return replaceFile(managed,[]byte(text))
  }
  // Check include collision before changing any file, even if marker is absent.
  if strings.Contains(strings.ToLower(prior),"include: sawcha_eq.txt") {
@@ -104,10 +102,16 @@ func RemoveAPO(configDir string) error {
  before,after,_:=strings.Cut(s,beginMarker)
  _,suffix,ok:=strings.Cut(after,endMarker)
  if !ok{return errors.New("missing SAWCHA end marker")}
- // Remove an inserted preceding newline and the closing marker's own newline.
- before=strings.TrimSuffix(before,"\n")
- suffix=strings.TrimPrefix(suffix,"\n")
- s=before+suffix
+ // Restore exact original bytes when the entry file has not been edited
+ // outside SAWCHA's inserted section. Otherwise remove only our block.
+ s=before+strings.TrimPrefix(suffix,"\n")
+ if backup,readErr:=os.ReadFile(entry+".sawcha-original.bak");readErr==nil {
+   orig:=string(backup)
+   expected:=orig
+   if expected!=""&&!strings.HasSuffix(expected,"\n"){expected+="\n"}
+   expected+=beginMarker+"\nDevice: all\nInclude: "+managedFile+"\n"+endMarker+"\n"
+   if string(original)==expected {s=orig}
+ }
  if err=replaceFile(entry,[]byte(s));err!=nil{return err}
  return nil
 }
@@ -122,5 +126,3 @@ func ReadAPOStatus(configDir string)(bool,bool,error) {
  return strings.Contains(string(b),beginMarker),fileErr==nil,nil
 }
 
-// Kept separate so Go tests can operate on temporary folders safely.
-var _=time.Second
