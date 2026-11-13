@@ -15,7 +15,9 @@ func TestAPO18BandsAndPreamp(t *testing.T) {
  p,_:=Preset("Footsteps")
  txt,err:=APOText(p,"Speakers")
  if err!=nil{t.Fatal(err)}
- if got:=strings.Count(txt,"ON PK Fc");got!=18{t.Fatalf("expected 18 filters, got %d",got)}
+ active:=0
+ for _,v:=range p.GainsDB {if v!=0 {active++}}
+ if got:=strings.Count(txt,"ON PK Fc");got!=active{t.Fatalf("expected %d active filters (18 adjustable bands), got %d",active,got)}
  if !strings.Contains(txt,"Preamp: -4.0 dB")||!strings.Contains(txt,"Device: Speakers") {t.Fatal("missing preamp or target device")}
  if _,err=APOText(p,"Speakers\nInclude: attack.txt");err==nil{t.Fatal("filter injection accepted")}
 }
@@ -56,4 +58,13 @@ func TestRefuseToRemoveEditedManagedBlock(t *testing.T) {
  if err:=RemoveAPO(d);err==nil{t.Fatal("edited block unexpectedly deleted")}
  after,_:=os.ReadFile(entry)
  if string(after)!=edited{t.Fatal("failed rollback changed user data")}
+}
+
+func TestFlatAPOHasNoFiltersOrGainChanges(t *testing.T) {
+ p,_:=Preset("Flat")
+ txt,err:=APOText(p,"")
+ if err!=nil {t.Fatal(err)}
+ if strings.Contains(txt,"ON PK")||strings.Contains(txt,"Preamp:")||strings.Contains(txt,"Delay:")||strings.Contains(txt,"Convolution:"){
+    t.Fatalf("flat must not do unnecessary DSP: %q",txt)
+ }
 }
