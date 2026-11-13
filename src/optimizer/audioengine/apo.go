@@ -99,6 +99,8 @@ func RemoveAPO(configDir string) error {
  s:=string(original)
  if !strings.Contains(s,beginMarker){return nil}
  if strings.Count(s,beginMarker)!=1||strings.Count(s,endMarker)!=1{return errors.New("ambiguous SAWCHA markers; refusing to modify config")}
+ expectedBlock:=beginMarker+"\nDevice: all\nInclude: "+managedFile+"\n"+endMarker
+ if !strings.Contains(s,expectedBlock){return errors.New("SAWCHA block was edited; refusing to remove unknown settings")}
  before,after,_:=strings.Cut(s,beginMarker)
  _,suffix,ok:=strings.Cut(after,endMarker)
  if !ok{return errors.New("missing SAWCHA end marker")}
