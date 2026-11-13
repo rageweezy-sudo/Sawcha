@@ -328,6 +328,7 @@ func (a *App) routes() http.Handler {
 	api("/api/mouse", a.mouseHandler)
 	api("/api/benchmark", a.benchmarkHandler)
 	api("/api/insights", a.insightsHandler)
+	api("/api/experiments", a.experimentHandler)
 	api("/api/gpu/compute", a.gpuComputeHandler)
 	api("/api/benchmark/import", a.importHandler)
 	api("/api/benchmark/capture", a.captureHandler)
@@ -1640,7 +1641,7 @@ func parseBenchmarkForProcess(r io.Reader, target string) (Benchmark, error) {
 		}
 		return -1
 	}
-	frameCol := lookup("msbetweenpresents", "msbetweenapppresents", "frametime", "frame time (ms)", "msbetweendisplaychange")
+	frameCol := lookup("msbetweenapppresents", "msbetweenpresents", "frametime", "frame time (ms)", "msbetweendisplaychange")
 	if frameCol < 0 {
 		return Benchmark{}, errors.New("No supported frame-time column found. Export a PresentMon CSV with MsBetweenPresents or MsBetweenAppPresents. Found: " + short(strings.Join(headers, ", "), 180))
 	}
