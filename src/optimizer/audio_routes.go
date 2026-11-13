@@ -8,7 +8,6 @@ import (
  "os/exec"
  "path/filepath"
  "runtime"
- "strconv"
  "strings"
 
  "sawcha/optimizer/audioengine"
@@ -153,16 +152,26 @@ func (a *App) audioBandHandler(w http.ResponseWriter,r *http.Request) {
 // audioVendorTool starts only a verified path inside the discovered install
 // directory. It never executes installer binaries from third-party downloads.
 func audioVendorTool(kind string) error {
- dir,problem:=discoverAPO();if problem!=""{return errors.New(problem)}
- base:=filepath.Dir(dir)
- names:=[]string{"DeviceSelector.exe","Configurator.exe"}
- if kind=="editor" {names=[]string{"Editor.exe"}}
- for _,name:=range names{
-   path:=filepath.Join(base,name)
-   if _,err:=os.Stat(path);err==nil {
-     return exec.Command(path).Start()
-   }
- }
- return fmt.Errorf("Equalizer APO %s was not found alongside the installation",kind)
+  dir,problem:=discoverAPO()
+  if problem!=""{return errors.New(problem)}
+  bases:=[]string{}
+  cmd:=exec.Command("reg.exe","query",`HKLM\\SOFTWARE\\EqualizerAPO`,"/v","InstallPath")
+  prepareHidden(cmd)
+  if data,err:=cmd.CombinedOutput();err==nil {
+    for _,line:=range strings.Split(string(data),"\\n"){
+       fields:=strings.Fields(strings.TrimSpace(line))
+       if len(fields)>=3&&strings.EqualFold(fields[0],"InstallPath")&&strings.HasPrefix(fields[1],"REG_") {
+          bases=append(bases,strings.Join(fields[2:]," "))
+       }
+    }
+  }
+  if root:=os.Getenv("ProgramFiles");root!=""{bases=append(bases,filepath.Join(root,"EqualizerAPO"))}
+  bases=append(bases,filepath.Dir(dir))
+  names:=[]string{"DeviceSelector.exe","Configurator.exe"}
+  if kind=="editor"{names=[]string{"Editor.exe"}}
+  for _,base:=range bases {for _,name:=range names {
+     path:=filepath.Join(base,name)
+     if info,err:=os.Stat(path);err==nil&&!info.IsDir(){return exec.Command(path).Start()}
+  }}
+  return fmt.Errorf("Equalizer APO %s executable was not found in its registered installation directory",kind)
 }
-var _ = strconv.Itoa
