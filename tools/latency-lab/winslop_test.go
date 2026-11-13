@@ -38,16 +38,16 @@ func TestWinSlopReadOnlyWithoutInferredDefaults(t *testing.T) {
 }
 func TestWinSlopInspectionIsSessionAuthenticated(t *testing.T) {
 	app := makeTestServer()
-	for _, path := range []string{"/api/winslop/inspect", "/api/winslop/apply", "/api/winslop/remove"} {
+	for _, path := range []string{"/api/winslop/inspect", "/api/winslop/plan", "/api/winslop/remove"} {
 		noToken := callAPI(app, path, "{}", "", app.origin)
-		if path == "/api/winslop/inspect" && noToken.Code != http.StatusForbidden {
-			t.Fatalf("inspect unprotected: %d", noToken.Code)
+		if noToken.Code != http.StatusForbidden {
+			t.Fatalf("cleanup route unauthenticated: %s: %d", path, noToken.Code)
 		}
-		if strings.Contains(path, "apply") || strings.Contains(path, "remove") {
-			authorised := callAPI(app, path, "{}", "unit-test-token", app.origin)
-			if authorised.Code != http.StatusNotFound {
-				t.Fatalf("unexpected Windows mutation endpoint %s: %d", path, authorised.Code)
-			}
+	}
+	for _, path := range []string{"/api/winslop/apply", "/api/winslop/remove-all", "/api/winslop/disable-defender"} {
+		authorised := callAPI(app, path, "{}", "unit-test-token", app.origin)
+		if authorised.Code != http.StatusNotFound {
+			t.Fatalf("unsupported mutation endpoint %s: %d", path, authorised.Code)
 		}
 	}
 }

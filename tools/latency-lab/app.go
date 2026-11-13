@@ -28,6 +28,12 @@ type server struct {
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Never expose the launch token to an arbitrary Host header. This
+		// blocks token leakage via DNS rebinding of a local browser server.
+		if r.Host != strings.TrimPrefix(s.origin, "http://") {
+			http.Error(w, "Invalid localhost host", http.StatusForbidden)
+			return
+		}
 		if r.URL.Path != "/" || r.Method != "GET" {
 			http.NotFound(w, r)
 			return
@@ -75,6 +81,8 @@ func (s *server) routes() http.Handler {
 	}
 	api("/api/scan", s.scanHandler)
 	api("/api/winslop/inspect", s.winSlopInspectHandler)
+	api("/api/winslop/plan", s.winSlopPlanHandler)
+	api("/api/winslop/remove", s.winSlopRemoveHandler)
 	api("/api/report", s.reportHandler)
 	api("/api/chat", s.chatHandler)
 	api("/api/trace", s.traceHandler)

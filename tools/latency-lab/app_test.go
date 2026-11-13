@@ -168,3 +168,14 @@ func TestHeavyTasksDoNotOverlap(t *testing.T) {
 		t.Fatalf("kernel tracing started during other heavy task: %d", trace.Code)
 	}
 }
+
+func TestRootTokenHiddenFromInvalidHost(t *testing.T) {
+	app := makeTestServer()
+	req := httptest.NewRequest("GET", "http://attacker.example/", nil)
+	req.Host = "attacker.example"
+	rec := httptest.NewRecorder()
+	app.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), app.token) {
+		t.Fatalf("invalid host leaked token: %d", rec.Code)
+	}
+}

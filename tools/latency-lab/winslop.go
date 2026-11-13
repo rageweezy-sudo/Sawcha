@@ -10,7 +10,7 @@ import (
 
 // The audit is an original SAWCHA implementation inspired by Windows cleanup
 // categories. No code or binary from Winslop/Winslopr/FluentTweaker is bundled.
-// This feature ONLY reads configuration. It has no mutation API.
+// Inspection remains read-only; separately consented removal is limited to a fixed optional-app allowlist.
 const fluentTweakerReleases = "https://github.com/builtbybel/FluentTweaker/releases"
 
 type WinSlopFinding struct {
@@ -53,23 +53,22 @@ var slopChecks = []slopCheck{
 	{"advertisingId", "Privacy", "Advertising ID", "Whether Windows advertising ID is explicitly enabled or disabled by user preference.", "Privacy preference; no measured gaming latency effect."},
 }
 
-var optionalAppNames = []struct{ ID, Title string }{
-	{"Microsoft.Copilot", "Microsoft Copilot"},
-	{"Microsoft.MicrosoftSolitaireCollection", "Solitaire Collection"},
-	{"Clipchamp.Clipchamp", "Clipchamp"},
-	{"Microsoft.WindowsFeedbackHub", "Feedback Hub"},
-	{"Microsoft.BingNews", "Microsoft News"},
-	{"Microsoft.GetHelp", "Get Help"},
-	{"Microsoft.YourPhone", "Phone Link"},
-	{"Microsoft.XboxGamingOverlay", "Xbox Game Bar"},
-}
+// For compatibility with the inspection report and the separately validated
+// removal catalog, use the same centrally reviewed optional-app IDs.
+var optionalAppNames = func() []struct{ ID, Title string } {
+	names := make([]struct{ ID, Title string }, 0, len(removableApps))
+	for _, app := range removableApps {
+		names = append(names, struct{ ID, Title string }{app.ID, app.Title})
+	}
+	return names
+}()
 
 // buildWinSlopAudit only interprets data that was read by Windows. A missing
 // key remains unknown: no guessing at Microsoft defaults or installed status.
 func buildWinSlopAudit(snapshot map[string]any) WinSlopAudit {
 	audit := WinSlopAudit{
 		TimestampUTC: time.Now().UTC().Format(time.RFC3339),
-		Mode:         "read-only inspection; no remediation or script execution",
+		Mode:         "read-only audit; selected optional app removal is a separate confirmed action",
 		Upstream:     "WinSlop / Winslopr (renamed FluentTweaker) by builtbybel; separate upstream application",
 		OfficialURL:  fluentTweakerReleases,
 		ModifiedOS:   false,
@@ -111,7 +110,7 @@ func buildWinSlopAudit(snapshot map[string]any) WinSlopAudit {
 		audit.Findings = append(audit.Findings, WinSlopFinding{
 			ID: "app:" + app.ID, Category: "Optional apps", Title: app.Title, State: state,
 			Evidence:    evidence,
-			Explanation: "Inventory only; no uninstallation is offered or performed.",
+			Explanation: "This optional app can be individually selected for removal after a separate preview and confirmation.",
 			Performance: "Installed does not mean running. Removing an app is not a proven latency optimization.",
 		})
 	}

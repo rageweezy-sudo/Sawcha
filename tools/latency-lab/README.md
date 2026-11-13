@@ -13,17 +13,26 @@ A separate Windows 10/11 x64 test application to collect detailed read-only perf
 - **Offline analysis** — basic rules/recommendations, no API key or outbound request required.
 - **Export** — download or copy the local JSON and submit it manually to ChatGPT for further review.
 
-## WinSlop-inspired, non-destructive inspector
+## Actual optional Windows app removal (explicit user-controlled)
 
-- **Windows cleanup inspection**, run only when you click **INSPECT WINDOWS FEATURES**, reports explicit registry values for Game DVR, Widgets, suggestions, ads/personalization, Copilot/Recall policies, plus a small allowlisted list of optional AppX package names and startup-entry *counts* (not command lines). Windows defaults are not inferred from missing registry keys.
-- **Original source, attribution-only integration:** builtbybel's original WinSlop/Winslopr project was renamed to **FluentTweaker**. SAWCHA does not bundle, copy, translate, alter, or relicense that project, its scripts or its binaries. The official publisher release page is linked by an ordinary browser link, not automatically installed or executed: https://github.com/builtbybel/FluentTweaker/releases .
-- **Zero remediation capability:** the companion has **no debloat, registry-write, service-stop, package-removal, or apply endpoints**. It cannot change any Windows setting from this inspector, even after scanning. To change Windows, use official tools separately with independent user review and consent.
-- All observed results can be copied and included in the local report for offline analysis or optional explicitly consented AI analysis. Installed app names do not prove those apps run or cause latency.
-- Unverified sources and repackaged installers are deliberately excluded. **No upstream license was verified for code redistribution**, so no upstream code or assets were reused.
+**This build CAN uninstall supported optional AppX/Store apps for the current Windows user.** Unlike a pure inspector, the feature now uses Microsoft `Remove-AppxPackage` with a confirmation workflow, per-app results and post-removal verification. Microsoft warns that app removal can be irreversible and can erase local app data.
+
+1. Click **FIND INSTALLED OPTIONAL APPS** and expand the **Optional apps** cards.
+2. Tick up to six installed apps to remove. No apps are preselected.
+3. Click **PREVIEW SELECTED REMOVALS**. Read every app-specific warning (especially **Xbox Game Bar**, **Phone Link**, **Outlook**, **Media Player** and **Clipchamp**).
+4. Check the data-loss warning, type `REMOVE SELECTED APPS` exactly, then click **UNINSTALL SELECTED APPS FROM THIS WINDOWS USER**. A final Windows-app confirmation appears in the browser.
+5. Windows re-queries the exact allowlisted package names, blocks NonRemovable/framework/resource/bundle packages and uninstalls using its supported `Remove-AppxPackage` command. It verifies current-user package registration and displays removed / not_installed / protected / failed for each item.
+6. **SAVE REMOVAL RECEIPT** to keep a record. SAWCHA rescans after removal. Do not run cleanup during a game.
+
+Eligible apps include Copilot, Solitaire, Clipchamp, Feedback Hub, News, Get Help, Phone Link, Xbox Game Bar, Weather, Maps, People, Media Player/Groove, Movies & TV, Tips, legacy Cortana and the new Outlook. Support is conditional on which versions Windows actually has installed, and some packages are system-protected. This does **not** uninstall arbitrary desktop EXEs or traditional Win32 programs.
+
+**Hard boundaries:** never uninstalls Microsoft Store, Windows Security, Windows shell, Edge/WebView2, Gaming Services, WinGet, drivers or core services. No `-AllUsers`, no provisioned-image removal, no registry editing, no security bypass, no auto-run, no remote execution. This is an original SAWCHA implementation; FluentTweaker upstream remains unmodified and unbundled. The [official FluentTweaker releases](https://github.com/builtbybel/FluentTweaker/releases) are linked for comparison only. No universal latency benefit is claimed.
+
+**Rollback:** AppX uninstallation is not automatically reversible. Reinstall eligible apps via Microsoft Store if offered, and make sure your account data is synchronized before removal. No state restore point is guaranteed.
 
 ## Run and build
 
-Run the unsigned test build EXE on Windows 10/11 x64. The tool starts a browser UI on **127.0.0.1** using a random OS-selected port. It does not open a firewall port or install anything. Close the console window to exit. The only outbound request is a deliberate **ASK OPENAI** action using the personal API key.
+Run the unsigned test build EXE on Windows 10/11 x64. The tool starts a browser UI on **127.0.0.1** using a random OS-selected port. It does not open a firewall port or install anything. Close the console window to exit. The only outbound request is a deliberate **ASK OPENAI** action using the personal API key. Windows AppX uninstall is a local operation requiring explicit user action.
 
 To build from source with Go 1.23+:
 
@@ -42,7 +51,7 @@ For WPR ETW tracing, launch the tool from an **administrator** PowerShell sessio
 - No kernel memory reading, unsigned driver installation, test signing, arbitrary hardware I/O, disabling Windows Defender / Memory Integrity / driver signing / anticheat, game injection or process manipulation.
 - Diagnostic JSON excludes IP/MAC, serial, hostname, username, full process command lines, event messages and file contents by design. Device names and process names can still reveal software or hardware; **inspect reports before sharing**.
 - ETL traces can contain more sensitive information than the JSON. Treat them as private and do not upload to AI without personally reviewing/sanitizing them.
-- No background monitoring, scheduler, telemetry, autorun, cloud upload or registry tweaks. The app's scan/WPR actions can temporarily affect performance. **Do not perform trace capture during competitive matches**.
+- No background monitoring, scheduler, telemetry, autorun, cloud upload or registry tweaks. The separate selected-app uninstaller performs explicitly confirmed current-user AppX removals. The app's scan/WPR actions can temporarily affect performance. **Do not perform trace capture during competitive matches**.
 - All API routes are localhost-only, require a per-launch random session token and reject foreign Origin/Host. The web UI loads no external libraries. API credentials stay in the browser input field for that session and go only through a localhost POST to a fixed OpenAI HTTPS destination on explicit request.
 - WPR is a Windows Microsoft-signed trace controller for *kernel ETW providers*. It is kernel-originated telemetry, not unrestricted kernel driver execution. A future custom driver would require a separate threat model, code signing and Windows HLK testing.
 

@@ -63,45 +63,105 @@ $('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.m
 
 
 let winSlopAudit = null;
+let lastRemovalPlan = null;
+let lastRemovalReceipt = null;
 function auditDetail(label, value) {
  const line=document.createElement('div');line.className='auditline';
  const title=document.createElement('b');title.textContent=label;
  const detail=document.createElement('span');detail.textContent=value;
  line.append(title,detail);return line;
 }
+function selectedSlopIDs() {
+ return [...document.querySelectorAll('.slopchoice:checked')].map(input=>input.value);
+}
+function clearRemovalPlan() {
+ lastRemovalPlan=null;$('slopremove').disabled=true;
+ $('sloppreview').textContent='Selection changed. Preview selected apps before removal.';
+}
 function renderWinSlopAudit(audit) {
  winSlopAudit=audit;
  const host=$('slopfindings');host.replaceChildren();
  const groups=new Map();
  for(const item of audit.findings||[]) {
-    if(!groups.has(item.category))groups.set(item.category,[]);
-    groups.get(item.category).push(item);
+   if(!groups.has(item.category))groups.set(item.category,[]);
+   groups.get(item.category).push(item);
  }
  for(const [category,findings] of groups) {
    const group=document.createElement('section');group.className='auditgroup';
    const head=document.createElement('h3');head.textContent=category;group.append(head);
-   for(const item of findings){
+   for(const item of findings) {
      const block=document.createElement('details');block.className='auditentry';
      const title=document.createElement('summary');title.textContent=item.title+' · '+item.state;
      block.append(title,auditDetail('Observation',item.evidence),auditDetail('What it means',item.explanation),auditDetail('Latency relevance',item.performance));
+     if(category==='Optional apps' && item.state==='Installed for current user' && item.id.startsWith('app:')) {
+       const select=document.createElement('label');select.className='check removal-check';
+       const toggle=document.createElement('input');toggle.type='checkbox';toggle.className='slopchoice';toggle.value=item.id.slice(4);
+       toggle.addEventListener('change',()=>{clearRemovalPlan();$('slopplan').disabled=selectedSlopIDs().length===0;});
+       const label=document.createElement('span');label.textContent='SELECT FOR ACTUAL UNINSTALL (CURRENT USER)';
+       select.append(toggle,label);block.append(select);
+     }
      group.append(block);
    }
    host.append(group);
  }
- $('slopcopy').disabled=false;
- setStatus('slopstatus',`Inspected ${audit.findings?.length||0} selected items at ${audit.timestampUtc}. No Windows settings were modified. Registry values are observations, not proof of feature activation or performance improvement.`);
+ clearRemovalPlan();$('slopplan').disabled=true;$('slopcopy').disabled=false;
+ setStatus('slopstatus',`Found ${audit.findings.filter(f=>f.category==='Optional apps'&&f.state==='Installed for current user').length} supported optional apps at ${audit.timestampUtc}. No Windows settings were modified by the scan. Click an installed app to expand its selection checkbox.`);
 }
-$('slopscan').onclick=async()=>{
- if(busy)return;busy=true;$('slopscan').disabled=true;
- setStatus('slopstatus','Read-only Windows policy and optional app inspection (no system changes)...');
- try {
+async function runSlopScan() {
+ if(busy)return;
+ busy=true;$('slopscan').disabled=true;
+ setStatus('slopstatus','Scanning installed apps and optional Windows preferences...');
+ try{
     const audit=await api('/api/winslop/inspect',{});renderWinSlopAudit(audit);
     if(report) {report=await api('/api/report',{});renderReport();}
  }catch(e){setStatus('slopstatus',e.message,true)}
  finally{busy=false;$('slopscan').disabled=false}
-};
+}
+$('slopscan').onclick=runSlopScan;
 $('slopcopy').onclick=async()=>{
  if(!winSlopAudit)return;
- try{await navigator.clipboard.writeText(JSON.stringify(winSlopAudit,null,2));setStatus('slopstatus','WinSlop-style inspection copied. Review before sharing; this is not output from the upstream app.');}
- catch(e){setStatus('slopstatus','Clipboard unavailable; use the full JSON export after a system scan.',true)}
+ try{await navigator.clipboard.writeText(JSON.stringify(winSlopAudit,null,2));setStatus('slopstatus','Windows feature audit copied. Review before sharing.');}
+ catch(e){setStatus('slopstatus','Clipboard unavailable.',true)}
+};
+$('slopplan').onclick=async()=>{
+ if(busy)return;
+ const ids=selectedSlopIDs();
+ if(ids.length===0||ids.length>6){setStatus('sloppreview','Choose 1–6 installed optional apps.',true);return;}
+ try{
+   const plan=await api('/api/winslop/plan',{ids});
+   lastRemovalPlan=plan;
+   $('sloppreview').textContent=plan.scope+'\n\n'+plan.apps.map((a,i)=>(i+1)+'. '+a.title+' ('+a.id+')\n   '+a.warning).join('\n\n')+'\n\n'+plan.warning;
+   $('slopremove').disabled=false;
+ }catch(e){clearRemovalPlan();setStatus('sloppreview',e.message,true)}
+};
+$('slopremove').onclick=async()=>{
+ if(busy||!lastRemovalPlan)return;
+ const ids=selectedSlopIDs();
+ const planned=lastRemovalPlan.apps.map(a=>a.id);
+ if(ids.length!==planned.length||ids.some((id,i)=>id!==planned[i])){clearRemovalPlan();setStatus('sloppreview','Selections changed. Preview again first.',true);return;}
+ if(!$('slopack').checked||$('slopconfirm').value!=='REMOVE SELECTED APPS'){
+   setStatus('sloppreview','You must acknowledge possible data loss and type REMOVE SELECTED APPS exactly.',true);return;
+ }
+ const description=lastRemovalPlan.apps.map(a=>'• '+a.title).join('\n');
+ if(!window.confirm('This will REALLY uninstall the following applications from your current Windows account:\n\n'+description+'\n\nApp data may be lost and automatic rollback is unavailable. Continue?'))return;
+ busy=true;$('slopremove').disabled=true;$('slopplan').disabled=true;$('slopscan').disabled=true;
+ setStatus('slopstatus','Removing selected AppX packages and verifying Windows registration. Do not close this window. This may take up to 48 seconds.');
+ try{
+   const receipt=await api('/api/winslop/remove',{ids,confirmDataLoss:true,confirmation:'REMOVE SELECTED APPS'});
+   lastRemovalReceipt=receipt;$('slopreceipt').disabled=false;
+   const lines=receipt.results.map(x=>x.id+': '+x.status.toUpperCase()+' — '+x.message);
+   setStatus('slopstatus','Windows returned results:\n'+lines.join('\n')+'\n\nSave the removal receipt. Apps for other Windows accounts were not affected.');
+   $('slopconfirm').value='';$('slopack').checked=false;clearRemovalPlan();
+   // Run a fresh post-change inventory; never display the old audit as current.
+   const audit=await api('/api/winslop/inspect',{});
+   renderWinSlopAudit(audit);
+   setStatus('slopstatus','Removal finished and current-user apps rescanned:\n'+lines.join('\n')+'\n\nSave the removal receipt for your records.');
+   if(report){report=await api('/api/report',{});renderReport();}
+ }catch(e){setStatus('slopstatus','Removal could not be fully verified: '+e.message+' Rescan before retrying; some packages may have been removed.',true)}
+ finally{busy=false;$('slopscan').disabled=false;$('slopremove').disabled=true;$('slopplan').disabled=selectedSlopIDs().length===0}
+};
+$('slopreceipt').onclick=()=>{
+ if(!lastRemovalReceipt)return;
+ const blob=new Blob([JSON.stringify(lastRemovalReceipt,null,2)],{type:'application/json'});
+ const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='SAWCHA_Removal_Receipt.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
 };

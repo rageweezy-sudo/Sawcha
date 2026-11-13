@@ -40,7 +40,7 @@ foreach($c in $checks) {
    }
  } catch { }
 }
-$wanted = @('Microsoft.Copilot','Microsoft.MicrosoftSolitaireCollection','Clipchamp.Clipchamp','Microsoft.WindowsFeedbackHub','Microsoft.BingNews','Microsoft.GetHelp','Microsoft.YourPhone','Microsoft.XboxGamingOverlay')
+$wanted = @('Microsoft.Copilot','Microsoft.MicrosoftSolitaireCollection','Clipchamp.Clipchamp','Microsoft.WindowsFeedbackHub','Microsoft.BingNews','Microsoft.GetHelp','Microsoft.YourPhone','Microsoft.XboxGamingOverlay','Microsoft.BingWeather','Microsoft.WindowsMaps','Microsoft.People','Microsoft.ZuneMusic','Microsoft.ZuneVideo','Microsoft.Getstarted','Microsoft.549981C3F5F10','Microsoft.OutlookForWindows')
 $packages=@()
 foreach($name in $wanted) {
  try {
