@@ -1,0 +1,57 @@
+name: SAWCHA Latency Lab CI
+on:
+  pull_request:
+    paths:
+      - 'tools/latency-lab/**'
+      - '.github/workflows/latency-lab-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/latency-lab/**'
+      - '.github/workflows/latency-lab-ci.yml'
+permissions:
+  contents: read
+jobs:
+  windows-test-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: tools/latency-lab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/latency-lab/go.mod
+          cache: false
+      - name: Windows Go unit tests
+        run: go test -v ./...
+      - name: Static analysis
+        run: go vet ./...
+      - name: Windows x64 unsigned build
+        shell: pwsh
+        run: |
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          go build -trimpath -o "$env:RUNNER_TEMP\SAWCHA_Latency_Lab.exe" .
+          if (-not (Test-Path "$env:RUNNER_TEMP\SAWCHA_Latency_Lab.exe")) { throw 'Build not found' }
+      - name: Upload unsigned test binary
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sawcha-latency-lab-unsigned-x64
+          path: ${{ runner.temp }}/SAWCHA_Latency_Lab.exe
+          retention-days: 7
+          if-no-files-found: error
+  linux-unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/latency-lab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/latency-lab/go.mod
+          cache: false
+      - run: go test -race ./...
+      - run: go vet ./...
