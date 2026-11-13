@@ -34,10 +34,15 @@ func APOText(eq EQConfig, device string) (string,error) {
  if strings.TrimSpace(device)=="" {b.WriteString("Device: all\n")} else {fmt.Fprintf(&b,"Device: %s\n",strings.TrimSpace(device))}
  b.WriteString("Channel: all\n")
  if !eq.Enabled {b.WriteString("# EQ bypassed\n");return b.String(),nil}
- fmt.Fprintf(&b,"Preamp: %.1f dB\n",eq.PreampDB)
+ if eq.PreampDB!=0 {fmt.Fprintf(&b,"Preamp: %.1f dB\n",eq.PreampDB)}
+ active:=0
  for i, hz:=range FrequenciesHz {
+    // Omit zero-gain filters entirely: Flat remains a true no-op.
+    if eq.GainsDB[i]==0 {continue}
+    active++
     fmt.Fprintf(&b,"Filter %d: ON PK Fc %.0f Hz Gain %.1f dB Q 2.60\n",i+1,hz,eq.GainsDB[i])
  }
+ if active==0 && eq.PreampDB==0 {b.WriteString("# Flat profile: no filters or gain changes\n")}
  return b.String(),nil
 }
 
