@@ -59,7 +59,7 @@ func (n *nativeApp) audioAction(action string) {
     n.audioSave(s)
     return
  case "apply":
-    if !n.confirm("Install SAWCHA EQ settings into your existing Equalizer APO configuration? A backup is retained. The audio device must already be selected in Equalizer APO.")||!n.gameWarning("Updating the Equalizer APO audio filters"){return}
+    if !n.confirm("Install SAWCHA EQ settings into Equalizer APO? SAWCHA adds no explicit delay/convolution stage, but non-flat EQ still requires CPU processing and its real device latency has NOT been measured. The original settings are backed up. Continue?")||!n.gameWarning("Updating the Equalizer APO audio filters"){return}
     n.async(func()error{
         res,err:=n.api("/api/audio/apply",map[string]bool{"ack_game_running":true})
         if err==nil{n.note(fmt.Sprint(res["message"]))}
