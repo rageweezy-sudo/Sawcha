@@ -155,10 +155,10 @@ func audioVendorTool(kind string) error {
   dir,problem:=discoverAPO()
   if problem!=""{return errors.New(problem)}
   bases:=[]string{}
-  cmd:=exec.Command("reg.exe","query",`HKLM\\SOFTWARE\\EqualizerAPO`,"/v","InstallPath")
+  cmd:=exec.Command("reg.exe","query",`HKLM\SOFTWARE\EqualizerAPO`,"/v","InstallPath")
   prepareHidden(cmd)
   if data,err:=cmd.CombinedOutput();err==nil {
-    for _,line:=range strings.Split(string(data),"\\n"){
+    for _,line:=range strings.Split(string(data),"\n"){
        fields:=strings.Fields(strings.TrimSpace(line))
        if len(fields)>=3&&strings.EqualFold(fields[0],"InstallPath")&&strings.HasPrefix(fields[1],"REG_") {
           bases=append(bases,strings.Join(fields[2:]," "))
