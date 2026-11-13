@@ -1425,6 +1425,10 @@ func (a *App) mouseHandler(w http.ResponseWriter, r *http.Request) {
 		bad(w, "Windows pointer speed must be 1–20", 400)
 		return
 	}
+	if e := a.speculativeSystemChangesAllowed(); e != nil {
+		bad(w, e.Error(), 409)
+		return
+	}
 	if e := setSystemMouseSpeed(v.Speed); e != nil {
 		bad(w, "Windows could not change pointer speed: "+e.Error(), 500)
 		return
