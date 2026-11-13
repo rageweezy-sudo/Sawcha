@@ -325,6 +325,9 @@ func (n *nativeApp) act(key string) {
 	}
 	if strings.HasPrefix(key, "pref:") {
 		field := strings.TrimPrefix(key, "pref:")
+		if field == "latency" && n.app.preferencesSnapshot().LatencySafe {
+			if !n.confirm("Disable strict latency protection? This permits speculative Windows registry and power-plan changes. Measure before and after, and use RESTORE if frame pacing becomes worse.") { return }
+		}
 		n.async(func() error {
 			_, p := n.app.guardSnapshot()
 			switch field {
@@ -334,6 +337,8 @@ func (n *nativeApp) act(key string) {
 				p.QuietWhileGaming = !p.QuietWhileGaming
 			case "warn":
 				p.WarnBeforeChanges = !p.WarnBeforeChanges
+			case "latency":
+				p.LatencySafe = !p.LatencySafe
 			case "interval":
 				if p.QuietMonitorSeconds == 60 {
 					p.QuietMonitorSeconds = 90
@@ -653,7 +658,7 @@ func (n *nativeApp) act(key string) {
 			}
 			return e
 		})
-	case "benchmark":
+	case "benchmark", "latencybaseline", "latencyafter":
 		g, ok := n.game()
 		if !ok {
 			n.note("Select a game first.")
@@ -663,10 +668,28 @@ func (n *nativeApp) act(key string) {
 			return
 		}
 		n.async(func() error {
-			_, e := n.api("/api/benchmark/capture", map[string]interface{}{"gameID": g.ID, "seconds": 30, "label": "Native 30s capture", "processName": filepath.Base(g.Exe)})
+			label := "Native 30s capture"
+			if key == "latencybaseline" || key == "latencyafter" { label = "Latency Guard same scene" }
+			_, e := n.api("/api/benchmark/capture", map[string]interface{}{"gameID": g.ID, "seconds": 30, "label": label, "processName": filepath.Base(g.Exe)})
 			if e == nil {
 				n.note("PresentMon frame-time capture started.")
 			}
+			return e
+		})
+	case "latencycompare":
+		n.app.mu.RLock()
+		history := append([]Benchmark(nil), n.app.history...)
+		n.app.mu.RUnlock()
+		g, hasGame := n.game()
+		matching := []Benchmark{}
+		for _, b := range history {
+			if b.Label == "Latency Guard same scene" && (!hasGame || strings.EqualFold(b.Game, g.Name)) { matching = append(matching, b) }
+			if len(matching) == 2 { break }
+		}
+		if len(matching) < 2 { n.note("Capture a BASELINE and AFTER run for the same game in the same scene before comparing."); return }
+		n.async(func() error {
+			report, e := n.api("/api/latency/compare", map[string]string{"beforeID": matching[1].ID, "afterID": matching[0].ID})
+			if e == nil { n.note(fmt.Sprint(report["message"])) }
 			return e
 		})
 	case "savepresentmon":
@@ -1275,7 +1298,7 @@ func (n *nativeApp) paintGames(dc uintptr, x, cw int) {
 	n.text(dc, "Tip: scroll to browse more games. Games detected from launchers can require the launcher to start first.", x+20, 716, cw-40, 64, muted, n.fontSmall, true)
 }
 func (n *nativeApp) paintProfiles(dc uintptr, x, cw int) {
-	n.heading(dc, "OPTIMIZATION PRESETS", "These change a few Windows settings with a backup. They are not magic FPS boosts.", x, 106, cw)
+	n.heading(dc, "OPTIMIZATION PRESETS", "Strict latency mode blocks speculative Windows tweaks by default. Toggle in Settings to experiment.", x, 106, cw)
 	for i, p := range []struct{ name, what, loss string }{
 		{"Competitive", "Game Mode on; Game DVR background capture off.", "Game Bar instant replay stops until restored."},
 		{"Balanced", "Game Mode on; keep background capture settings.", "Little/no change on a system already optimized."},
@@ -1286,7 +1309,11 @@ func (n *nativeApp) paintProfiles(dc uintptr, x, cw int) {
 		n.text(dc, p.name+" MODE", x+19, y+10, cw-260, 32, red, n.fontBold, false)
 		n.text(dc, "WHAT IT DOES: "+p.what, x+19, y+46, cw-260, 36, white, n.font, false)
 		n.text(dc, "TRADEOFF: "+p.loss, x+19, y+88, cw-260, 27, muted, n.fontSmall, false)
-		n.button(dc, "preset:"+p.name, "APPLY", x+cw-175, y+45, 154, 42, true)
+		if n.app.preferencesSnapshot().LatencySafe {
+			n.button(dc, "nav:settings", "SAFE MODE", x+cw-175, y+45, 154, 42, false)
+		} else {
+			n.button(dc, "preset:"+p.name, "APPLY", x+cw-175, y+45, 154, 42, true)
+		}
 	}
 	n.button(dc, "restore", "RESTORE ORIGINAL SETTINGS", x, 659, 320, 45, false)
 	n.wrap(dc, "Keep Defender enabled. Do not blindly disable Windows services, core isolation or drivers. Test actual frame times before deciding whether a preset helped.", x+340, 666, cw-352, 66)
@@ -1317,14 +1344,18 @@ func (n *nativeApp) paintBenchmark(dc uintptr, x, cw int) {
 	if capturing {
 		txt = "Capture in progress — keep the game open"
 	}
-	n.text(dc, txt, x, 408, cw, 36, muted, n.font, false)
-	n.text(dc, "RECENT BENCHMARK RESULTS", x, 459, cw, 35, red, n.fontBold, false)
+	n.text(dc, txt, x, 391, cw, 30, muted, n.font, false)
+	bw := (cw - 24) / 3
+	n.button(dc, "latencybaseline", "CAPTURE BASELINE", x, 425, bw, 39, false)
+	n.button(dc, "latencyafter", "CAPTURE AFTER", x+bw+12, 425, bw, 39, false)
+	n.button(dc, "latencycompare", "COMPARE LATENCY", x+2*(bw+12), 425, bw, 39, true)
+	n.text(dc, "RECENT BENCHMARK RESULTS", x, 477, cw, 35, red, n.fontBold, false)
 	if len(hist) == 0 {
-		n.wrap(dc, "No recordings yet. Capture the same scene before and after a change. 1% low FPS describes how slow the slowest 1% of frames are; higher is generally smoother.", x, 502, cw, 105)
+		n.wrap(dc, "No recordings yet. Capture the same scene before and after a change. 1% low FPS describes how slow the slowest 1% of frames are; higher is generally smoother.", x, 519, cw, 105)
 	}
 	for i := len(hist) - 1; i >= 0 && i >= len(hist)-4; i-- {
 		j := len(hist) - 1 - i
-		y := 503 + j*71
+		y := 520 + j*71
 		if y > 757 {
 			break
 		}
@@ -1530,7 +1561,7 @@ func (n *nativeApp) paintSettings(dc uintptr, x, cw int, identity string) {
 	n.wrap(dc, "While gaming, Sawcha reduces its own live monitoring and redraw frequency.", x+326, 334, cw-345, 49)
 	n.button(dc, "pref:warn", "CHANGE WARNINGS: "+onOff(p.WarnBeforeChanges), x+18, 391, 285, 44, false)
 	n.wrap(dc, "Warn before system changes while a detected game is running. Enabled by default.", x+326, 393, cw-345, 48)
-	n.button(dc, "pref:interval", fmt.Sprintf("QUIET POLLING: %ds", p.QuietMonitorSeconds), x+18, 450, 285, 43, false)
+	n.button(dc, "pref:latency", "STRICT LATENCY: "+onOff(p.LatencySafe), x+18, 450, 285, 43, p.LatencySafe)
 	n.button(dc, "pref:defaults", "RESET DEFAULTS", x+326, 450, 225, 43, false)
 	n.text(dc, "DEVICE CONTROL PANELS", x, 524, cw, 35, red, n.fontBold, false)
 	tools := []struct{ key, title string }{{"nvidia", "NVIDIA"}, {"amd", "AMD"}, {"mouse", "MOUSE"}, {"controller", "CONTROLLER"}, {"keyboard", "KEYBOARD"}, {"graphics", "GRAPHICS"}, {"drivers", "DRIVERS"}, {"device", "DEVICE MANAGER"}, {"startup", "STARTUP APPS"}}
