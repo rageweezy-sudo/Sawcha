@@ -57,6 +57,7 @@ type SavedConfig struct {
 	Backup              *Backup                       `json:"backup,omitempty"`
 	Preset              string                        `json:"preset"`
 	SensitivityProfiles map[string]SensitivitySetting `json:"sensitivityProfiles,omitempty"`
+	Audio               AudioSettings                `json:"audio"`
 }
 type RegBackup struct {
 	Key    string `json:"key"`
@@ -209,6 +210,9 @@ func (a *App) loadConfig() {
 	if a.config.Preset == "" {
 		a.config.Preset = "Stock"
 	}
+	if a.config.Audio.Plan == "" {
+		a.config.Audio = defaultAudioSettings()
+	}
 }
 func (a *App) persistConfig() error {
 	a.mu.RLock()
@@ -324,11 +328,18 @@ func (a *App) routes() http.Handler {
 	api("/api/benchmark", a.benchmarkHandler)
 	api("/api/benchmark/import", a.importHandler)
 	api("/api/benchmark/capture", a.captureHandler)
+	api("/api/latency/compare", a.latencyCompareHandler)
 	api("/api/settings", a.settingsHandler)
 	api("/api/preferences", a.preferencesHandler)
 	api("/api/guides", a.guidesHandler)
 	api("/api/sensitivity", a.sensitivityHandler)
 	api("/api/assistant/chat", a.advisorHandler)
+	api("/api/audio/status", a.audioStatusHandler)
+	api("/api/audio/settings", a.audioSettingsHandler)
+	api("/api/audio/preset", a.audioPresetHandler)
+	api("/api/audio/band", a.audioBandHandler)
+	api("/api/audio/apply", a.audioApplyHandler)
+	api("/api/audio/remove", a.audioRemoveHandler)
 	api("/api/quit", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST required", 405)
@@ -548,14 +559,20 @@ func (a *App) pollLoop() {
 	for range ticker.C {
 		a.mu.RLock()
 		recentlyViewed := time.Since(a.lastMonitor) < 18*time.Second
+		game, prefs := a.runningGame, a.preferences
 		a.mu.RUnlock()
+		if !shouldRunLiveMonitor(recentlyViewed, game, prefs) {
+			// Strict mode leaves idle Windows alone; during games no heavy
+			// WMI/PowerShell collection runs, even with the Live Monitor open.
+			continue
+		}
 		interval := 30 * time.Second
 		if recentlyViewed {
-			interval = 5 * time.Second
-		}
-		if a.isQuietGaming() {
-			_, p := a.guardSnapshot()
-			interval = time.Duration(p.QuietMonitorSeconds) * time.Second
+			if prefs.LatencySafe {
+				interval = 15 * time.Second
+			} else {
+				interval = 5 * time.Second
+			}
 		}
 		if time.Since(lastSample) < interval {
 			continue
@@ -1099,6 +1116,10 @@ func (a *App) presetHandler(w http.ResponseWriter, r *http.Request) {
 		bad(w, "Unknown preset", 400)
 		return
 	}
+	if err := a.speculativeSystemChangesAllowed(); err != nil {
+		bad(w, err.Error(), 409)
+		return
+	}
 	a.mu.RLock()
 	bk := a.config.Backup
 	a.mu.RUnlock()
@@ -1403,6 +1424,10 @@ func (a *App) mouseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if v.Speed < 1 || v.Speed > 20 {
 		bad(w, "Windows pointer speed must be 1–20", 400)
+		return
+	}
+	if e := a.speculativeSystemChangesAllowed(); e != nil {
+		bad(w, e.Error(), 409)
 		return
 	}
 	if e := setSystemMouseSpeed(v.Speed); e != nil {

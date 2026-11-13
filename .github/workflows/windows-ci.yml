@@ -29,6 +29,14 @@ jobs:
       - name: Keep build unsigned
         shell: pwsh
         run: Write-Host 'CI checks compile only. Production Authenticode signing must use a private signing service and should happen outside this public repository.'
+      - name: Upload unsigned development build (manual test only)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sawcha-unsigned-windows-${{ github.run_number }}
+          path: ${{ runner.temp }}/SAWCHA_OPTIMIZER.exe
+          if-no-files-found: error
+          retention-days: 7
 
   plus-api:
     name: Test private-data-safe Plus API
