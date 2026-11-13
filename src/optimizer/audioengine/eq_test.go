@@ -46,3 +46,14 @@ func TestMalformedInterleavedRejected(t *testing.T) {
     p,_:=Preset("Flat");eq,_:=NewEqualizer(48000,2,p)
     if err:=eq.ProcessInterleaved([]float32{0.1});err==nil{t.Fatal("odd stereo buffer accepted")}
 }
+
+func TestAudioProcessDoesNotAllocatePerBuffer(t *testing.T) {
+ p,_:=Preset("Footsteps")
+ eq,err:=NewEqualizer(48000,2,p)
+ if err!=nil{t.Fatal(err)}
+ buffer:=make([]float32,480)
+ allocations:=testing.AllocsPerRun(100,func(){
+   if err:=eq.ProcessInterleaved(buffer);err!=nil {t.Fatal(err)}
+ })
+ if allocations!=0 {t.Fatalf("audio callback must not allocate, got %g allocations",allocations)}
+}
