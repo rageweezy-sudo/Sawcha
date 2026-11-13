@@ -12,3 +12,7 @@ Report security issues using GitHub's **private vulnerability reporting** if ava
 Maintain least-privilege behavior: customer builds must not expose administrative licensing operations, secrets must stay server-side, and any publicly hosted verification endpoint must authenticate requests and rate-limit abuse.
 
 Digital signing does not bypass antivirus scanning. Do not instruct users to disable Microsoft Defender to install the software.
+
+## Research module policy (v9)
+
+The GPU Compute Lab only reports capabilities and links to upstream public research. It does **not** unlock firmware, patch the Windows boot chain, alter driver signatures, make hidden registry writes, bypass anti-cheat, or bundle third-party GPL kernel components. Only high-confidence, repeatably benchmarked changes should be presented as performance improvements.

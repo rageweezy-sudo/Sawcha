@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-const version = "8.0.0-native"
+const version = "9.0.0-nextgen"
 
 //go:embed web/*
 var assets embed.FS
@@ -79,20 +79,25 @@ type Job struct {
 	Output  string `json:"output"`
 }
 type Benchmark struct {
-	ID       string    `json:"id"`
-	Game     string    `json:"game"`
-	Label    string    `json:"label"`
-	Profile  string    `json:"profile"`
-	Date     string    `json:"date"`
-	Frames   int       `json:"frames"`
-	AvgFPS   float64   `json:"avgFPS"`
-	Low1     float64   `json:"low1"`
-	Low01    float64   `json:"low01"`
-	P99ms    float64   `json:"p99ms"`
-	Medianms float64   `json:"medianms"`
-	Stutters int       `json:"stutters"`
-	Chart    []float64 `json:"chart"`
-	Source   string    `json:"source"`
+	ID              string    `json:"id"`
+	Game            string    `json:"game"`
+	Label           string    `json:"label"`
+	Profile         string    `json:"profile"`
+	Date            string    `json:"date"`
+	Frames          int       `json:"frames"`
+	AvgFPS          float64   `json:"avgFPS"`
+	Low1            float64   `json:"low1"`
+	Low01           float64   `json:"low01"`
+	P99ms           float64   `json:"p99ms"`
+	Medianms        float64   `json:"medianms"`
+	Stutters        int       `json:"stutters"`
+	StutterPct      float64   `json:"stutterPct,omitempty"`
+	P95ms           float64   `json:"p95ms,omitempty"`
+	GPUBusyAvgms    float64   `json:"gpuBusyAvgms,omitempty"`
+	CPUBusyAvgms    float64   `json:"cpuBusyAvgms,omitempty"`
+	GeneratedFrames int       `json:"generatedFrames,omitempty"`
+	Chart           []float64 `json:"chart"`
+	Source          string    `json:"source"`
 }
 
 type App struct {
@@ -322,6 +327,8 @@ func (a *App) routes() http.Handler {
 	api("/api/ping", a.pingHandler)
 	api("/api/mouse", a.mouseHandler)
 	api("/api/benchmark", a.benchmarkHandler)
+	api("/api/insights", a.insightsHandler)
+	api("/api/gpu/compute", a.gpuComputeHandler)
 	api("/api/benchmark/import", a.importHandler)
 	api("/api/benchmark/capture", a.captureHandler)
 	api("/api/settings", a.settingsHandler)
@@ -1522,7 +1529,7 @@ func (a *App) captureHandler(w http.ResponseWriter, r *http.Request) {
 		defer func() { a.mu.Lock(); a.capturing = false; a.mu.Unlock() }()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(v.Seconds+40)*time.Second)
 		defer cancel()
-		out, e := run(ctx, p, "--process_name", proc, "--output_file", file, "--timed", strconv.Itoa(v.Seconds), "--terminate_after_timed", "--v1_metrics")
+		out, e := run(ctx, p, "--process_name", proc, "--output_file", file, "--timed", strconv.Itoa(v.Seconds), "--terminate_after_timed", "--track_frame_type")
 		if e != nil {
 			a.completeJob(id, out, e)
 			return
@@ -1533,7 +1540,7 @@ func (a *App) captureHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
-		bm, e := parseBenchmark(f)
+		bm, e := parseBenchmarkForProcess(f, proc)
 		if e != nil {
 			a.completeJob(id, "Capture returned no usable frame times. Check the game's actual process name and any capture permissions.\n"+out, e)
 			return
@@ -1609,50 +1616,121 @@ func (a *App) saveBenchmark(b Benchmark) {
 	_ = a.persistHistory()
 	a.logger("Benchmark saved: " + b.Game)
 }
-func parseBenchmark(r io.Reader) (Benchmark, error) {
+
+// parseBenchmark refuses to mix frames from multiple unrelated processes.
+// PresentMon v2.6 includes per-process and optional generated-frame/CPU/GPU metrics.
+func parseBenchmark(r io.Reader) (Benchmark, error) { return parseBenchmarkForProcess(r, "") }
+func parseBenchmarkForProcess(r io.Reader, target string) (Benchmark, error) {
 	csvr := csv.NewReader(r)
 	csvr.FieldsPerRecord = -1
 	csvr.LazyQuotes = true
-	headers, e := csvr.Read()
-	if e != nil {
-		return Benchmark{}, fmt.Errorf("Could not read CSV headers: %w", e)
+	headers, err := csvr.Read()
+	if err != nil {
+		return Benchmark{}, fmt.Errorf("Could not read CSV headers: %w", err)
 	}
 	columns := map[string]int{}
 	for i, h := range headers {
 		columns[strings.ToLower(strings.TrimSpace(strings.TrimPrefix(h, "\uFEFF")))] = i
 	}
-	timeNames := []string{"msbetweenpresents", "msbetweenapppresents", "msbetweendisplaychange", "frametime", "frame time (ms)"}
-	col := -1
-	for _, name := range timeNames {
-		if i, ok := columns[name]; ok {
-			col = i
-			break
+	lookup := func(names ...string) int {
+		for _, name := range names {
+			if idx, ok := columns[name]; ok {
+				return idx
+			}
 		}
+		return -1
 	}
-	if col < 0 {
+	frameCol := lookup("msbetweenpresents", "msbetweenapppresents", "frametime", "frame time (ms)", "msbetweendisplaychange")
+	if frameCol < 0 {
 		return Benchmark{}, errors.New("No supported frame-time column found. Export a PresentMon CSV with MsBetweenPresents or MsBetweenAppPresents. Found: " + short(strings.Join(headers, ", "), 180))
 	}
+	appCol := lookup("application", "processname")
+	frameTypeCol := lookup("frametype")
+	gpuCol := lookup("msgpubusy", "msgpubusytime")
+	cpuCol := lookup("mscpubusy")
 	values := make([]float64, 0, 14000)
+	var gpuTotal, cpuTotal float64
+	var gpuCount, cpuCount, generated int
+	apps := map[string]bool{}
+	cell := func(rec []string, col int) string {
+		if col >= 0 && col < len(rec) {
+			return strings.TrimSpace(rec[col])
+		}
+		return ""
+	}
+	target = processBasename(target)
 	for len(values) < 200000 {
-		record, err := csvr.Read()
-		if errors.Is(err, io.EOF) {
+		rec, e := csvr.Read()
+		if errors.Is(e, io.EOF) {
 			break
 		}
-		if err != nil {
+		if e != nil {
 			continue
 		}
-		if col >= len(record) {
+		app := processBasename(cell(rec, appCol))
+		if target != "" && appCol >= 0 && app != target {
 			continue
 		}
-		f, err := strconv.ParseFloat(strings.TrimSpace(record[col]), 64)
-		if err == nil && f >= 0.1 && f <= 2000 && !math.IsNaN(f) && !math.IsInf(f, 0) {
-			values = append(values, f)
+		if app != "" && appCol >= 0 {
+			apps[app] = true
 		}
+		kind := strings.ToLower(cell(rec, frameTypeCol))
+		if strings.Contains(kind, "generat") || strings.Contains(kind, "interpolat") || strings.Contains(kind, "synthetic") {
+			generated++
+			continue
+		}
+		f, e := strconv.ParseFloat(cell(rec, frameCol), 64)
+		if e != nil || f < 0.1 || f > 2000 || math.IsNaN(f) || math.IsInf(f, 0) {
+			continue
+		}
+		values = append(values, f)
+		if gpu, e := strconv.ParseFloat(cell(rec, gpuCol), 64); e == nil && gpu >= 0 && gpu < 2000 && !math.IsNaN(gpu) && !math.IsInf(gpu, 0) {
+			gpuTotal += gpu
+			gpuCount++
+		}
+		if cpu, e := strconv.ParseFloat(cell(rec, cpuCol), 64); e == nil && cpu >= 0 && cpu < 2000 && !math.IsNaN(cpu) && !math.IsInf(cpu, 0) {
+			cpuTotal += cpu
+			cpuCount++
+		}
+	}
+	if target == "" && len(apps) > 1 {
+		return Benchmark{}, errors.New("CSV contains multiple application processes; capture one game process at a time instead of combining their frame times")
 	}
 	if len(values) < 40 {
-		return Benchmark{}, fmt.Errorf("Only %d valid frame times. Need at least 40 frames to calculate meaningful percentiles", len(values))
+		return Benchmark{}, fmt.Errorf("Only %d valid frame times. Need at least 40 application frames to calculate meaningful percentiles", len(values))
 	}
-	return benchmarkStats(values), nil
+	result := benchmarkStats(values)
+	result.GeneratedFrames = generated
+	if gpuCount > 0 {
+		result.GPUBusyAvgms = math.Round(100*gpuTotal/float64(gpuCount)) / 100
+	}
+	if cpuCount > 0 {
+		result.CPUBusyAvgms = math.Round(100*cpuTotal/float64(cpuCount)) / 100
+	}
+	return result, nil
+}
+
+func (a *App) insightsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		bad(w, "GET required", 405)
+		return
+	}
+	a.mu.RLock()
+	hw := a.hardware
+	history := append([]Benchmark(nil), a.history...)
+	games := append([]Game(nil), a.games...)
+	a.mu.RUnlock()
+	send(w, buildInsights(hw, history, games, r.URL.Query().Get("game")))
+}
+func (a *App) gpuComputeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		bad(w, "GET required", 405)
+		return
+	}
+	a.mu.RLock()
+	hw := a.hardware
+	a.mu.RUnlock()
+	send(w, assessGPUCompute(hw))
 }
 func benchmarkStats(v []float64) Benchmark {
 	sorted := append([]float64(nil), v...)
@@ -1701,5 +1779,5 @@ func benchmarkStats(v []float64) Benchmark {
 		chart = append(chart, math.Round(maxF*100)/100)
 	}
 	round := func(x float64) float64 { return math.Round(x*10) / 10 }
-	return Benchmark{Frames: n, AvgFPS: round(1000 / (sum / float64(n))), Low1: round(worst(.01)), Low01: round(worst(.001)), P99ms: round(at(.99)), Medianms: round(median), Stutters: stutters, Chart: chart}
+	return Benchmark{Frames: n, P95ms: round(at(.95)), StutterPct: round(100 * float64(stutters) / float64(n)), AvgFPS: round(1000 / (sum / float64(n))), Low1: round(worst(.01)), Low01: round(worst(.001)), P99ms: round(at(.99)), Medianms: round(median), Stutters: stutters, Chart: chart}
 }

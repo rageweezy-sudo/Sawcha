@@ -2,14 +2,16 @@
 
 A native Windows 10/11 desktop optimization and troubleshooting app, built in Go with a Win32 interface. This repository contains the **public customer application source**. It does **not** contain the private developer key vault, payment secrets, issued license keys, customer records, or signing credentials.
 
-> **Status:** Development release v8.0. The code was cross-compiled for Windows x64 and passed existing Go unit tests and `go vet` in a Linux build environment. The native UI, game discovery, NVIDIA monitoring, and performance changes still need validation on real Windows hardware. No FPS gain is guaranteed.
+> **Status:** Development release v9.0. The code was cross-compiled for Windows x64 and passed existing Go unit tests and `go vet` in a Linux build environment. The native UI, game discovery, NVIDIA monitoring, and performance changes still need validation on real Windows hardware. No FPS gain is guaranteed.
 
 ## Features
 
 - Startup hardware scan and installed game discovery (Steam, Epic, and selected launcher locations).
 - Gray/red native UI with separate game, keybind, DPI, live-monitoring, and diagnostic views.
 - Gaming/Creator optimization presets with backup and restore of supported changes.
-- Frame-time measurement via an optional, separately installed Intel PresentMon console executable.
+- Frame-time measurement via an optional, separately installed Intel PresentMon console executable. New in v9: application-process filtering, frame generation separation when annotated, and optional GPU/CPU busy analysis.
+- Native **Insight Engine** for prioritized bottleneck hypotheses, P95/P99 and 1% low metrics, before/after regression checks and explicit verification/rollback instructions.
+- Native **GPU Compute Lab** (read-only). NVIDIA RTX generation assessment and legitimate AI/creator workload advice; Zagitta's original Linux GPU-Unlock is not ported or bundled, and does not improve game FPS.
 - DPI calculator and recommended game keybinds (these are **guides**, not automatic hardware DPI detection or in-game modifications).
 - Offline troubleshooting suggestions; optional online assistant using a user-supplied API key.
 - Google Desktop OAuth with PKCE when you configure **your own** desktop OAuth client ID. Guest access is available without it.
@@ -65,5 +67,7 @@ The proposed Plus plan is **$1.99 USD/month**; Basic remains free. Configure the
 SAWCHA now accepts developer-signed complimentary Pro keys through the same hosted verification API, without Stripe payment. The owner signs each gift in a **separate private Windows tool**, not a key-generation page embedded in the customer app. The signed gift is bound to the first registered installation, expires after the chosen number of days, and can be revoked through a separately signed owner command. The private owner signing key (Windows DPAPI-protected) and its executable **do not belong in this public repository**. The server requires `SAWCHA_GIFT_PUBLIC_KEY`, which contains only a public key. See [`docs/COMPLIMENTARY_PRO.md`](docs/COMPLIMENTARY_PRO.md).
 
 The Settings tab supports automatic running-game detection, quiet in-game monitoring, a 60/90/120-second quiet polling interval, confirmation warnings for system changes and restoring defaults. A running game never triggers automatic registry writes or process termination. Monitoring returns to normal when the game closes. Windows installation identity is protected using DPAPI, not stored as transferable plaintext.
+
+Read [`docs/NEXTGEN_PERFORMANCE_ENGINE.md`](docs/NEXTGEN_PERFORMANCE_ENGINE.md) for testing methodology, source acknowledgements and remaining milestones.
 
 See [`docs/PROJECT_HISTORY_PLAIN_ENGLISH.md`](docs/PROJECT_HISTORY_PLAIN_ENGLISH.md) for a plain-English feature and limitation list and [`docs/OPTIMIZER_RESEARCH.md`](docs/OPTIMIZER_RESEARCH.md) for researched design inspiration.

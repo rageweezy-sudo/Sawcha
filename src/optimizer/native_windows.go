@@ -164,6 +164,8 @@ var menus = []struct{ id, name, detail string }{
 	{"games", "GAME LIBRARY", "Launch & profiles"},
 	{"profiles", "OPTIMIZE", "Reversible presets"},
 	{"benchmark", "FRAME TIME LAB", "Measure game smoothness"},
+	{"insights", "INSIGHT ENGINE", "Evidence-based recommendations"},
+	{"compute", "GPU COMPUTE LAB", "AI workload compatibility"},
 	{"input", "DPI + SENSITIVITY", "Per-game mouse profiles"},
 	{"keybinds", "KEYBIND GUIDE", "Keyboard + controller"},
 	{"assistant", "AI TROUBLESHOOT", "Ask about performance"},
@@ -716,6 +718,12 @@ func (n *nativeApp) act(key string) {
 			}
 			return e
 		})
+	case "gpuunlockresearch":
+		n.openLink("https://github.com/Zagitta/gpu-unlock")
+	case "presentmonrelease":
+		n.openLink("https://github.com/GameTechDev/PresentMon/releases")
+	case "windowsgraphics":
+		n.openLink("ms-settings:display-advancedgraphics")
 	case "signing":
 		n.openLink("https://learn.microsoft.com/en-us/windows/msix/package/signing-package-overview")
 	case "verify":
@@ -1100,11 +1108,22 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 	n.text(dc, "SAWCHA //", 22, 23, 212, 44, red, n.fontBig, false)
 	n.text(dc, "OPTIMIZER", 22, 65, 215, 36, white, n.fontBold, false)
 	n.small(dc, "BUILT BY sawcha", 22, 108, 215)
+	navStep := (h - 232) / len(menus)
+	if navStep > 41 {
+		navStep = 41
+	}
+	if navStep < 24 {
+		navStep = 24
+	}
+	navHeight := navStep - 2
+	if navHeight > 38 {
+		navHeight = 38
+	}
 	for i, m := range menus {
-		yy := 150 + i*43
+		yy := 143 + i*navStep
 		if page == m.id {
-			n.rect(dc, 8, yy-3, 238, 42, cardAccent)
-			n.rect(dc, 8, yy-3, 4, 42, red)
+			n.rect(dc, 8, yy-3, 238, navHeight, cardAccent)
+			n.rect(dc, 8, yy-3, 4, navHeight, red)
 		}
 		n.text(dc, m.name, 22, yy+1, 216, 30, func() uintptr {
 			if page == m.id {
@@ -1112,10 +1131,10 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 			}
 			return white
 		}(), n.fontSmall, false)
-		n.hits = append(n.hits, hitBox{winRect{8, int32(yy - 3), 246, int32(yy + 40)}, "nav:" + m.id})
+		n.hits = append(n.hits, hitBox{winRect{8, int32(yy - 3), 246, int32(yy - 3 + navHeight)}, "nav:" + m.id})
 	}
 	n.text(dc, "NATIVE / NO JAVASCRIPT", 22, h-80, 220, 27, green, n.fontSmall, false)
-	n.text(dc, "v8.0  •  WINDOWS 10 + 11", 22, h-49, 225, 26, muted, n.fontSmall, false)
+	n.text(dc, "v9.0  •  WINDOWS 10 + 11", 22, h-49, 225, 26, muted, n.fontSmall, false)
 	n.rect(dc, 252, 0, w-252, 81, darker)
 	game, prefs := n.app.guardSnapshot()
 	if game != "" {
@@ -1152,6 +1171,10 @@ func (n *nativeApp) paintApp(dc uintptr, w, h int, page, identity, answer, statu
 		n.paintProfiles(dc, x, cw)
 	case "benchmark":
 		n.paintBenchmark(dc, x, cw)
+	case "insights":
+		n.paintInsights(dc, x, cw)
+	case "compute":
+		n.paintCompute(dc, x, cw)
 	case "input":
 		n.paintInput(dc, x, cw)
 	case "keybinds":
@@ -1279,6 +1302,91 @@ func (n *nativeApp) paintProfiles(dc uintptr, x, cw int) {
 	n.button(dc, "restore", "RESTORE ORIGINAL SETTINGS", x, 659, 320, 45, false)
 	n.wrap(dc, "Keep Defender enabled. Do not blindly disable Windows services, core isolation or drivers. Test actual frame times before deciding whether a preset helped.", x+340, 666, cw-352, 66)
 }
+func (n *nativeApp) paintInsights(dc uintptr, x, cw int) {
+	n.heading(dc, "INSIGHT ENGINE / v9", "Ranked performance actions backed by actual frame measurements.", x, 106, cw)
+	g, ok := n.game()
+	chosen := ""
+	if ok {
+		chosen = g.Name
+	}
+	n.app.mu.RLock()
+	hw := n.app.hardware
+	hist := append([]Benchmark(nil), n.app.history...)
+	games := append([]Game(nil), n.app.games...)
+	n.app.mu.RUnlock()
+	r := buildInsights(hw, hist, games, chosen)
+	n.panel(dc, x, 197, cw, 121)
+	n.text(dc, short("GAME: "+r.Game, 75), x+18, 209, cw-38, 35, red, n.fontBold, false)
+	n.text(dc, short("STATUS: "+r.Status, 80), x+18, 250, cw-38, 27, green, n.fontSmall, false)
+	n.text(dc, short("LIMIT: "+r.Bottleneck, 82), x+18, 280, cw-38, 29, white, n.fontSmall, false)
+	if r.FrameSample != nil {
+		b := r.FrameSample
+		n.panel(dc, x, 330, cw, 126)
+		n.text(dc, fmt.Sprintf("%.1f FPS AVG    %.1f FPS 1%% LOW    %.1f MS P99", b.AvgFPS, b.Low1, b.P99ms), x+15, 340, cw-25, 30, red, n.fontBold, false)
+		n.text(dc, fmt.Sprintf("%.1f%% SPIKES    GPU BUSY %.2f MS    CPU BUSY %.2f MS", b.StutterPct, b.GPUBusyAvgms, b.CPUBusyAvgms), x+15, 371, cw-25, 27, muted, n.fontSmall, false)
+		// The bars are downsampled peak frame times, not fabricated FPS numbers.
+		if len(b.Chart) > 0 {
+			maxVisible := b.P99ms * 2
+			if maxVisible < 25 {
+				maxVisible = 25
+			}
+			barCount := len(b.Chart)
+			if barCount > 140 {
+				barCount = 140
+			}
+			for i := 0; i < barCount; i++ {
+				v := b.Chart[i*len(b.Chart)/barCount]
+				height := int(math.Min(44, math.Max(1, v/maxVisible*44)))
+				xpos := x + 15 + (cw-36)*i/barCount
+				n.rect(dc, xpos, 447-height, 2, height, red)
+			}
+		}
+	} else {
+		n.panel(dc, x, 330, cw, 126)
+		n.wrap(dc, "No game benchmark recorded yet. Open FRAME TIME LAB, run a capture in a consistent scene, then return here. Sawcha will not invent a CPU/GPU bottleneck.", x+16, 344, cw-30, 94)
+	}
+	y := 470
+	if r.Comparison != nil {
+		c := r.Comparison
+		n.panel(dc, x, y, cw, 90)
+		n.text(dc, fmt.Sprintf("BEFORE / AFTER: %+.1f%% AVG  •  %+.1f%% 1%% LOW  •  %+.1f%% P99 TIME", c.AvgFPSChangePct, c.Low1ChangePct, c.P99msChangePct), x+15, y+9, cw-26, 31, red, n.fontBold, false)
+		n.wrap(dc, short(c.Assessment, 125), x+15, y+44, cw-30, 41)
+		y += 99
+	}
+	n.text(dc, "RANKED NEXT STEPS — WHAT / WHY / RISK", x, y, cw, 32, red, n.fontBold, false)
+	y += 39
+	for i, item := range r.Actions {
+		if i >= 3 || y > 752 {
+			break
+		}
+		n.panel(dc, x, y, cw, 83)
+		n.text(dc, fmt.Sprintf("%d   %s", item.Priority, short(item.Title, 67)), x+12, y+5, cw-24, 27, red, n.fontBold, false)
+		n.wrap(dc, short(item.Why, 220), x+12, y+34, cw-25, 44)
+		y += 91
+	}
+	n.small(dc, "One capture is directional, not statistically proven. Repeat 3x per condition.", x, 778, cw)
+}
+
+func (n *nativeApp) paintCompute(dc uintptr, x, cw int) {
+	n.heading(dc, "GPU COMPUTE LAB / AI", "NVIDIA compute research; separate from game FPS optimization.", x, 106, cw)
+	n.app.mu.RLock()
+	hw := n.app.hardware
+	n.app.mu.RUnlock()
+	r := assessGPUCompute(hw)
+	n.panel(dc, x, 200, cw, 191)
+	n.text(dc, "GPU: "+short(r.Device, 76), x+17, 211, cw-32, 37, red, n.fontBold, false)
+	n.text(dc, "FAMILY: "+r.Family, x+17, 254, cw-32, 30, white, n.font, false)
+	n.wrap(dc, "RESEARCH: "+r.ResearchStatus, x+17, 293, cw-34, 68)
+	n.panel(dc, x, 410, cw, 153)
+	n.text(dc, "IMPORTANT: NOT A GAMING FPS BOOST", x+18, 419, cw-30, 32, red, n.fontBold, false)
+	n.wrap(dc, "Zagitta's original GPU-Unlock increases selected NVIDIA FP16/BF16/TF32 AI compute throughput on Linux. The developer reports NO improvement to ordinary gaming or FP32 workloads. Windows firmware/boot modifications are NOT performed by Sawcha.", x+18, 463, cw-35, 85)
+	n.text(dc, "SAFER NVIDIA CREATOR / AI WORKFLOW", x, 578, cw, 33, red, n.fontBold, false)
+	n.panel(dc, x, 620, cw, 144)
+	n.wrap(dc, "Test actual AI generation, training and inference workloads using manufacturer-supported CUDA and precision settings. Monitor VRAM, power and temperature, and keep a stock baseline. Avoid unsigned third-party drivers, Secure Boot disabling and unofficial firmware installers.", x+16, 632, cw-28, 111)
+	n.button(dc, "gpuunlockresearch", "VIEW ORIGINAL RESEARCH", x, 773, 272, 41, false)
+	n.button(dc, "presentmonrelease", "PRESENTMON 2.6+", x+286, 773, 238, 41, true)
+}
+
 func (n *nativeApp) paintBenchmark(dc uintptr, x, cw int) {
 	n.heading(dc, "FRAME TIME LAB", "Compare real 1% lows and frame pacing, not only the FPS counter.", x, 106, cw)
 	n.app.mu.RLock()
